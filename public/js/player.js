@@ -1,7 +1,8 @@
 /* The musician's phone: sign up, say what you're comfortable with, see when you're up. */
 
 import {
-  $, api, approvedSongs, el, guard, masthead, pendingSongs, pluralize, render, subscribe, toast, tokens,
+  $, api, approvedSongs, confirmButton, el, guard, masthead, pendingSongs, pluralize, render,
+  subscribe, toast, tokens,
 } from './common.js';
 
 const app = $('#app');
@@ -448,16 +449,20 @@ function youView(you) {
     ),
 
     el('div', { class: 'center' },
-      el('button', {
+      confirmButton({
+        key: 'leave-jam',
+        label: 'Leave the jam',
         class: 'btn btn--danger btn--sm',
-        onClick: guard(async () => {
-          if (!confirm('Leave the jam? Your sign-up will be removed.')) return;
+        confirmClass: 'btn btn--danger btn--sm',
+        title: 'Leave the jam? Your sign-up will be removed.',
+        onConfirm: async () => {
           await api(`/players/${you.id}`, { method: 'DELETE' });
           tokens.player = '';
           tokens.playerId = '';
           location.reload();
-        }),
-      }, 'Leave the jam'),
+        },
+        onChange: draw,
+      }),
     ),
   );
 }

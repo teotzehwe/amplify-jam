@@ -90,6 +90,60 @@ export function guard(fn) {
   };
 }
 
+/* -------------------------------------------------------- two-step confirm */
+
+/**
+ * Pending "Sure?" clicks, keyed so they survive a full re-render.
+ *
+ * The host console rebuilds on every poll (~2.5s) without reloading the page.
+ * Native window.confirm() is suppressed by browsers after a few uses on the
+ * same load ("Prevent this page from creating additional dialogs"), which
+ * silently returns false forever — Remove buttons looked dead mid-jam. An
+ * in-app arm/confirm on the button itself has no such limit, but the armed
+ * state must live outside the DOM or the next poll wipes it.
+ */
+const pendingConfirms = new Map(); // key -> timeout id
+const CONFIRM_MS = 3000;
+
+/**
+ * Destructive control: first click arms ("Sure?"), second click within ~3s
+ * runs `onConfirm`. `onChange` fires when the armed state flips so the
+ * caller can re-render.
+ */
+export function confirmButton({
+  key,
+  label,
+  confirmLabel = 'Sure?',
+  class: className = 'btn btn--sm btn--quiet',
+  confirmClass = 'btn btn--sm btn--danger',
+  title,
+  onConfirm,
+  onChange,
+}) {
+  const armed = pendingConfirms.has(key);
+  return el('button', {
+    type: 'button',
+    class: armed ? confirmClass : className,
+    title: title || undefined,
+    'aria-label': title || undefined,
+    onClick: guard(async () => {
+      if (!pendingConfirms.has(key)) {
+        const timer = setTimeout(() => {
+          pendingConfirms.delete(key);
+          onChange?.();
+        }, CONFIRM_MS);
+        pendingConfirms.set(key, timer);
+        onChange?.();
+        return;
+      }
+      clearTimeout(pendingConfirms.get(key));
+      pendingConfirms.delete(key);
+      onChange?.();
+      await onConfirm();
+    }),
+  }, armed ? confirmLabel : label);
+}
+
 /* ------------------------------------------------------------- live state */
 
 /**

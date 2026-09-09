@@ -1,8 +1,8 @@
 /* The host console: put a song on deck, pick the band by hand, call it out. */
 
 import {
-  $, api, approvedSongs, coverageFor, el, guard, masthead, pendingSongs, playedSongIds,
-  pluralize, render, signupsFor, subscribe, toast, tokens, upNext,
+  $, api, approvedSongs, confirmButton, coverageFor, el, guard, masthead, pendingSongs,
+  playedSongIds, pluralize, render, signupsFor, subscribe, toast, tokens, upNext,
 } from './common.js';
 import { qrSvg } from './qr.js';
 
@@ -499,13 +499,13 @@ function personCard(person, maxPlays) {
         onClick: () => save({ present: !person.present }),
       }, person.present ? 'Mark on a break' : 'Mark back'),
       el('span', { class: 'spacer' }),
-      el('button', {
-        class: 'btn btn--sm btn--quiet',
-        onClick: guard(async () => {
-          if (!confirm(`Remove ${person.name} from tonight?`)) return;
-          await api(`/players/${person.id}`, { method: 'DELETE' });
-        }),
-      }, 'Remove'),
+      confirmButton({
+        key: `remove-player:${person.id}`,
+        label: 'Remove',
+        title: `Remove ${person.name} from tonight`,
+        onConfirm: () => api(`/players/${person.id}`, { method: 'DELETE' }),
+        onChange: draw,
+      }),
     ),
   );
 }
@@ -578,11 +578,8 @@ function requests() {
     toast(`“${song.title}” is on the setlist`);
   });
 
-  const decline = guard(async (song) => {
-    if (!confirm(`Decline “${song.title}”? It disappears from the person who asked.`)) return;
-    await api(`/songs/${song.id}`, { method: 'DELETE' });
-    toast('Declined');
-  });
+  const decline = (song) => api(`/songs/${song.id}`, { method: 'DELETE' })
+    .then(() => toast('Declined'));
 
   return el('section', { class: 'card stack card--alert' },
     el('div', { class: 'card__head' },
@@ -601,7 +598,13 @@ function requests() {
           ),
           el('div', { class: 'row row--wrap' },
             el('button', { class: 'btn btn--primary btn--sm', onClick: () => approve(song) }, 'Approve'),
-            el('button', { class: 'btn btn--sm btn--quiet', onClick: () => decline(song) }, 'Decline'),
+            confirmButton({
+              key: `decline-song:${song.id}`,
+              label: 'Decline',
+              title: `Decline “${song.title}”? It disappears from the person who asked.`,
+              onConfirm: () => decline(song),
+              onChange: draw,
+            }),
           ),
         );
       }),
@@ -674,13 +677,13 @@ function songAdminCard(song, index) {
           }, 'Play next')
         : null,
       el('button', { class: 'btn btn--sm', onClick: () => putOnDeck(song.id) }, 'On deck'),
-      el('button', {
-        class: 'btn btn--sm btn--quiet',
-        onClick: guard(async () => {
-          if (!confirm(`Remove “${song.title}” from the setlist?`)) return;
-          await api(`/songs/${song.id}`, { method: 'DELETE' });
-        }),
-      }, 'Remove'),
+      confirmButton({
+        key: `remove-song:${song.id}`,
+        label: 'Remove',
+        title: `Remove “${song.title}” from the setlist`,
+        onConfirm: () => api(`/songs/${song.id}`, { method: 'DELETE' }),
+        onChange: draw,
+      }),
     ),
   );
 }
@@ -770,22 +773,30 @@ function settingsTab() {
     el('section', { class: 'card stack' },
       el('div', { class: 'card__head' }, el('h2', {}, 'Start over')),
       el('div', { class: 'row row--wrap' },
-        el('button', {
+        confirmButton({
+          key: 'reset-turns',
+          label: 'Reset turn counts',
           class: 'btn btn--danger',
-          onClick: guard(async () => {
-            if (!confirm('Reset turn counts? The roster and setlist stay.')) return;
+          confirmClass: 'btn btn--danger',
+          title: 'Reset turn counts? The roster and setlist stay.',
+          onConfirm: async () => {
             await api('/host/reset', { method: 'POST', body: { mode: 'turns' } });
             toast('Turns reset');
-          }),
-        }, 'Reset turn counts'),
-        el('button', {
+          },
+          onChange: draw,
+        }),
+        confirmButton({
+          key: 'clear-night',
+          label: 'Clear the night',
           class: 'btn btn--danger',
-          onClick: guard(async () => {
-            if (!confirm('Clear the whole night — every sign-up and song?')) return;
+          confirmClass: 'btn btn--danger',
+          title: 'Clear the whole night — every sign-up and song?',
+          onConfirm: async () => {
             await api('/host/reset', { method: 'POST', body: { mode: 'night' } });
             toast('Fresh night');
-          }),
-        }, 'Clear the night'),
+          },
+          onChange: draw,
+        }),
       ),
     ),
   );
