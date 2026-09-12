@@ -108,39 +108,36 @@ Scale — **12 / 14 / 16 / 20 / 24 / 32**, plus one display step:
 | `--text-2xl` | 32 | stat numbers |
 | `--text-display` | 40 | the masthead headline only |
 
-> **Rule.** New type **must** land on a step. Before this system the app used ten
-> ad-hoc sizes (0.74/0.78/0.82/0.85/0.87/0.88/0.9/0.92/1.05/1.15rem) doing the
-> work of five, which is a large part of why the screens read busy.
->
-> - Do: `font-size: var(--text-sm)`
-> - Don't: `font-size: 0.88rem`
+> **Rule.** New type **must** land on a step.
 
-Faces — matched to Trackr (`study-planner`), one stack for everything:
+Face — one self-hosted family for everything (offline-first):
 
 ```
---font:         -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
-                "Inter", "Helvetica Neue", Arial, sans-serif
+--font:         "PP Neue Montreal", ui-sans-serif, system-ui, sans-serif
 --font-display: var(--font)
 ```
 
-> **Rule.** There is **no** separate display face. Hierarchy comes from weight,
-> size and tracking alone.
->
-> - Do: `font-weight: 700` with negative tracking at `--text-lg` and above
-> - Don't: introduce a second family to make a heading feel different
+Files live in `public/fonts/` as `woff2` (PP Neue Montreal OFL). Hierarchy comes
+from weight, size and modest tracking — not a second family, not a CDN.
 
-> **Rule.** Every entry **must** be a system font. `-apple-system` resolves to
-> SF Pro on Apple hardware; `Inter` is carried for parity with Trackr but is
-> never loaded by either app. Adding a face that needs the network breaks the
-> offline-first rule — see §1 Non-goals.
+> **Rule.** Do **not** load fonts from the network. Do **not** list Inter,
+> Roboto, or marketing system stacks as the primary face.
+>
+> - Do: ship `woff2` under `/fonts` and reference it with `@font-face`
+> - Don't: Google Fonts, Bunny, jsDelivr, or `fonts.cdnfonts.com`
+
+> **Rule.** Tracking stays modest. Uppercase labels ≤ `0.08em`. Display titles
+> around `-0.01em` to `-0.015em`. Wide letterspacing and forced lowercase
+> headlines are out.
+
 
 ### 2.4 Spacing, radius, elevation
 
 Spacing — **4 / 8 / 12 / 16 / 24 / 32** as `--space-1`…`--space-6`. Same rule:
 land on a step.
 
-Radius is **two** values, deliberately: `--radius: 12px` for controls,
-`--radius-lg: 20px` for sheets.
+Radius is **two** values, deliberately: `--radius: 8px` for controls,
+`--radius-lg: 12px` for sheets.
 
 Shadows carry cool graphite, not brown paper: `--shadow-soft` for cards,
 `--shadow` for lifted things (toasts).

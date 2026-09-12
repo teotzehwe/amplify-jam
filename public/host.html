@@ -11,31 +11,32 @@
   <style>
     .tabs {
       display: flex;
-      gap: 4px;
-      padding: 4px;
-      background: rgba(255, 255, 255, 0.55);
-      border: 1px solid var(--line);
-      border-radius: 999px;
+      gap: 0;
+      padding: 0;
+      background: transparent;
+      border-bottom: 1px solid var(--line);
+      border-radius: 0;
       overflow-x: auto;
-      backdrop-filter: blur(10px);
     }
     .tabs button {
-      padding: 9px 16px;
+      padding: 10px 14px;
       border: 0;
-      border-radius: 999px;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
       background: transparent;
       color: var(--muted);
       font-weight: 600;
       font-size: var(--text-sm);
       cursor: pointer;
       white-space: nowrap;
-      transition: all 0.15s;
+      margin-bottom: -1px;
     }
-    .tabs button:hover { color: var(--text); background: rgba(255, 255, 255, 0.7); }
+    .tabs button:hover { color: var(--text); background: transparent; }
     .tabs button[aria-selected="true"] {
-      background: var(--ink);
-      color: #fff;
-      box-shadow: 0 6px 18px rgba(11, 13, 18, 0.18);
+      background: transparent;
+      color: var(--ink);
+      border-bottom-color: var(--ink);
+      box-shadow: none;
     }
     /* Primary navigation, and 40px by default — under the thumb floor. */
     @media (pointer: coarse) { .tabs button { min-height: 44px; } }
@@ -65,7 +66,7 @@
 
     .stat-strip { display: flex; gap: 22px; flex-wrap: wrap; }
     .stat b { display: block; font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 600; }
-    .stat span { color: var(--muted); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; }
+    .stat span { color: var(--muted); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.04em; }
 
     /* --- the band on stage ------------------------------------------ */
     /* Narrow, the instrument sits above the name and the action shares the
@@ -98,7 +99,7 @@
     }
     .slot__inst {
       font-size: var(--text-xs);
-      letter-spacing: 0.14em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
       font-weight: 700;
       color: var(--faint);
@@ -110,7 +111,7 @@
 
     .sub-head {
       font-size: var(--text-xs);
-      letter-spacing: 0.16em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
       font-weight: 700;
       color: var(--faint);
