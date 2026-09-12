@@ -1,0 +1,520 @@
+/* Amplify — Impeccable design system.
+   Editorial poster aesthetic: amber as the brand voice, burnt orange and cream
+   as alternating section grounds, near-black ink on warm paper.
+
+   Two rules hold the palette together, both measured:
+     - Brand hues are FILLS. Text on a light ground uses the darkened --ink-*
+       variants below; amber as text is only 2.96:1 on white.
+     - Amber fills carry ink text (5.99:1); burnt and danger fills carry white
+       (4.56:1 and 4.83:1). Never the other way round. */
+
+:root {
+  color-scheme: light;
+
+  /* Impeccable palette */
+  --amber: #cc8800;        /* primary — the brand voice */
+  --burnt: #c55221;        /* secondary — section grounds */
+  --amber-lift: #d39926;   /* amber lightened for the dark stage display */
+  --cream: #fdf4e3;
+  --sand: #ece0c9;
+  --ink: #111827;
+
+  /* Semantic */
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+
+  /* Text-safe darkenings — all clear 4.5:1 on BOTH white and cream */
+  --ink-amber: #8a5c00;    /* 5.81 / 5.32 */
+  --ink-burnt: #a7451c;    /* 5.98 / 5.48 */
+  --ink-success: #107a37;  /* 5.44 / 4.98 */
+  --ink-warning: #a25904;  /* 5.29 / 4.85 */
+  --ink-danger: #b01e1e;   /* 6.88 / 6.30 */
+
+  /* Surfaces — warm paper, not clinical white.
+     This used to be a near-white page carrying pure #ffffff cards, so every
+     card was *brighter* than the sheet it sat on: the look of a generic web
+     app. Warming the ground and letting the cards be a soft off-white reads
+     as printed matter instead, which is what a gig night should feel like.
+     The brand's own cream/sand sit naturally against these. */
+  --bg: #faf3e6;
+  --surface: #fffdf8;
+  --surface-2: #f8f0df;
+  --surface-3: #f1e6d0;
+  --sunken: var(--sand);
+
+  /* Ink */
+  --text: var(--ink);
+  --muted: rgba(17, 24, 39, 0.68);
+  /* 0.56, not 0.46. This carries the hints, helper lines and placeholders —
+     real text people are meant to read — and at 0.46 it measured 3.27:1,
+     under the 4.5:1 floor for text this size. 0.58 clears it at 4.94:1 on
+     white and 4.8:1 on the cream ground — 0.56 passed on white but slipped to
+     4.46:1 once sections gained a cream background, which is exactly the kind
+     of regression a re-measure after a restyle is for. Still clearly secondary
+     next to --muted (6.56:1). */
+  --faint: rgba(17, 24, 39, 0.60);
+
+  /**
+   * Type scale — 12 / 14 / 16 / 20 / 24 / 32, plus one display step above it.
+   *
+   * These sizes were previously ad-hoc: 0.74, 0.78, 0.82, 0.85, 0.87, 0.88,
+   * 0.9, 0.92, 1.05, 1.15rem — ten values doing the work of five, which is a
+   * large part of why the screens read busy. Anything new must land on a step.
+   */
+  --text-xs: 0.75rem;    /* 12 — tags, labels, hints */
+  --text-sm: 0.875rem;   /* 14 — buttons, helper text, meta */
+  --text-md: 1rem;       /* 16 — body, inputs */
+  --text-lg: 1.25rem;    /* 20 — card titles */
+  --text-xl: 1.5rem;     /* 24 — section headings */
+  --text-2xl: 2rem;      /* 32 — top of the scale */
+  --text-display: 2.5rem; /* 40 — poster headline; above the scale on purpose */
+
+  /* Spacing — 4 / 8 / 12 / 16 / 24 / 32. Same rule: land on a step. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Rules and shadows carry a little brown rather than neutral black, so they
+     sit in the paper instead of on top of it. */
+  --line: rgba(120, 72, 24, 0.18);
+  --line-strong: rgba(120, 72, 24, 0.36);
+
+  /* Two radii, not one. Everything was 12px, which is a large part of why
+     every element read at the same level — a chip, a card and a button were
+     the same shape. Controls are now tighter than the sheets holding them. */
+  --radius: 10px;
+  --radius-lg: 18px;
+  --shadow-soft: 0 1px 2px rgba(120, 72, 24, 0.06), 0 6px 18px rgba(120, 72, 24, 0.08);
+  --shadow: 0 10px 38px rgba(120, 72, 24, 0.16);
+  --ring: 0 0 0 3px rgba(204, 136, 0, 0.34);
+
+  /* Matched to Trackr (study-planner): one Apple-system stack for everything,
+     with no separate display face — hierarchy comes from weight and size
+     rather than a second typeface. Every entry is a system font except Inter,
+     which Trackr also lists without loading, so nothing here touches the
+     network and the offline-first rule still holds.
+
+     This also retires the Aileron reference, which had no @font-face and no
+     font file and so never resolved on any machine. */
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font);
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text);
+  /* A flat fill reads as a blank canvas; a single warm bloom behind the
+     masthead makes the page feel lit rather than printed on plastic. Fixed so
+     it stays put while the sheet scrolls under it. */
+  background:
+    radial-gradient(1100px 520px at 50% -14%, rgba(204, 136, 0, 0.09), transparent 62%),
+    var(--bg);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/**
+ * Display type.
+ *
+ * There is no separate display face any more — headings and body share the
+ * Trackr stack, so hierarchy has to come from weight, size and tracking alone.
+ * 700 with slight negative tracking is how SF Pro is set at display sizes;
+ * the tightening scales up by size below, since it helps a headline and hurts
+ * a small heading.
+ */
+h1, h2, h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  line-height: 1.06;
+}
+p { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+
+::selection { background: rgba(204, 136, 0, 0.24); }
+
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+/* ------------------------------------------------------------------ layout */
+
+.shell { max-width: 780px; margin: 0 auto; padding: var(--space-5) var(--space-4) 96px; }
+.shell--wide { max-width: 1200px; }
+
+.stack { display: grid; gap: var(--space-4); }
+.stack--lg { gap: var(--space-5); }
+.row { display: flex; align-items: center; gap: var(--space-3); }
+.row--between { justify-content: space-between; }
+.row--wrap { flex-wrap: wrap; }
+.grow { flex: 1; min-width: 0; }
+.spacer { flex: 1; }
+
+/* ------------------------------------------------------------------ header */
+
+.masthead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5) 0 var(--space-6);
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  flex: none;
+  border-radius: 15px;
+  /* Amber into burnt orange — the two Impeccable brand hues, and the whole
+     identity is a music mark. */
+  background: linear-gradient(145deg, var(--amber), var(--burnt));
+  box-shadow: 0 4px 14px rgba(204, 136, 0, 0.32);
+}
+.mark svg { width: 27px; height: 27px; display: block; }
+
+/* The name of the night, at the size a night deserves. It was 1.5rem — 1.5x
+   body — where a poster headline wants three or four times it. */
+.masthead h1 {
+  font-size: clamp(var(--text-2xl), 7vw, var(--text-display));
+  letter-spacing: -0.022em;
+  text-transform: lowercase;
+}
+.masthead .sub {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  margin-top: 3px;
+}
+
+/* On a phone the headline, the mark and a trailing action cannot share a line:
+   the title column collapses to ~120px and "open jam night" breaks mid-phrase.
+   Any trailing action drops to its own row instead. */
+@media (max-width: 560px) {
+  .masthead { flex-wrap: wrap; row-gap: var(--space-3); }
+  /* `.grow` is flex:1;min-width:0, so it shrinks forever and the row never
+     actually wraps — the title just breaks a word per line. Giving it a floor
+     is what pushes any trailing action down to its own row. */
+  .masthead > .grow { min-width: 200px; }
+  .masthead > :not(.mark):not(.grow) { margin-left: calc(52px + var(--space-4)); }
+}
+
+/* -------------------------------------------------------------------- card */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-soft);
+}
+/**
+ * The second ground.
+ *
+ * A phone screen here is a long column of identical white panels. Giving
+ * related sections a cream ground breaks that into bands the eye can navigate
+ * — the poster move, and the brand's own cream rather than an invented tint.
+ * Grouped by meaning, not alternated mechanically, so the rhythm survives a
+ * section being conditionally absent.
+ */
+.card--cream {
+  background: linear-gradient(180deg, var(--cream), rgba(253, 244, 227, 0.5));
+  border-color: rgba(94, 60, 30, 0.24);
+}
+.card--flat { box-shadow: none; }
+.card--pad-sm { padding: var(--space-4); }
+
+.card__head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin-bottom: var(--space-4); }
+.card__head h2 { font-size: var(--text-lg); letter-spacing: -0.012em; }
+.card__head .hint { color: var(--faint); font-size: var(--text-xs); margin-left: auto; }
+
+@media (max-width: 520px) {
+  .card__head .hint { margin-left: 0; flex-basis: 100%; }
+}
+
+.section-note { color: var(--muted); font-size: var(--text-sm); margin-top: -4px; }
+
+/* ------------------------------------------------------------------ fields */
+
+.field { display: grid; gap: 7px; }
+.field > label, .label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+input[type="text"], input[type="number"], input[type="search"], textarea, select {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+input::placeholder, textarea::placeholder { color: var(--faint); }
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--amber);
+  box-shadow: var(--ring);
+}
+textarea { resize: vertical; min-height: 76px; }
+
+/* ------------------------------------------------------------------ button */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, transform 0.12s, opacity 0.15s;
+}
+.btn:hover { background: var(--ink); color: #fff; }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn:disabled:hover { background: var(--surface); color: var(--text); }
+
+/* Ink on amber, never white on amber — see the note at the top. */
+.btn--primary {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: var(--ink);
+}
+.btn--primary:hover { background: var(--ink); border-color: var(--ink); color: #fff; }
+
+.btn--ghost { background: transparent; border-color: var(--line-strong); color: var(--muted); }
+.btn--ghost:hover { background: var(--surface-3); border-color: var(--ink); color: var(--text); }
+
+.btn--danger { background: transparent; border-color: var(--ink-danger); color: var(--ink-danger); }
+.btn--danger:hover { background: var(--ink-danger); color: #fff; }
+
+/* Removing someone is rare — it should not shout from every card in the list. */
+.btn--quiet { background: transparent; border-color: transparent; color: var(--faint); }
+.btn--quiet:hover { background: transparent; border-color: var(--ink-danger); color: var(--ink-danger); }
+
+/* An inline text action: clearly tappable, but not competing with Sign up. */
+.btn--link {
+  padding: 2px 0;
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-danger);
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.btn--link:hover { background: transparent; color: var(--ink); }
+
+.btn--block { width: 100%; }
+.btn--lg { padding: 15px 26px; font-size: var(--text-md); }
+.btn--sm { padding: 7px 13px; font-size: var(--text-xs); }
+.btn--icon { padding: 8px; width: 34px; height: 34px; border-radius: 999px; }
+
+/**
+ * Thumb-sized targets on touch screens.
+ *
+ * Measured, the compact variants come out at 36px (sm), 34px (icon) and 25px
+ * (link) — all under the 44px floor, and `sm` is nearly every action in the
+ * app: Sign up, Withdraw, Put on, Take off, Approve. That is fine under a
+ * mouse and wrong under a thumb, so the minimum is applied where the rule
+ * actually bites rather than fattening every screen.
+ *
+ * min-height rather than padding, so the label stays put and only the hit
+ * area grows.
+ */
+@media (pointer: coarse) {
+  /* Selects and toggles belong here too: a local padding override on a select
+     silently took it to 39px, and the toggle label is only as tall as its
+     track. Covering the element types rather than named components means the
+     floor survives the next restyle. */
+  select, input, .toggle { min-height: 44px; }
+  .btn--sm { min-height: 44px; padding-left: 16px; padding-right: 16px; }
+  .btn--icon { width: 44px; height: 44px; }
+  .btn--link { min-height: 44px; }
+}
+
+/* ------------------------------------------------------------------- chips */
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  /* 44px flat: this is the instrument picker, the first thing every musician
+     touches, and it measured 42px. Two pixels are not worth a media query. */
+  min-height: 44px;
+  padding: 9px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.chip:hover { border-color: var(--ink); background: var(--surface-2); }
+.chip[aria-pressed="true"] {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: var(--ink);
+  font-weight: 600;
+}
+.chip__x { color: var(--faint); font-size: var(--text-md); line-height: 1; }
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.tag--in { background: rgba(22, 163, 74, 0.26); border-color: rgba(16, 122, 55, 0.4); color: var(--ink-success); }
+.tag--maybe { background: rgba(217, 119, 6, 0.3); border-color: rgba(162, 89, 4, 0.35); color: var(--ink-warning); }
+.tag--out { background: rgba(204, 136, 0, 0.16); border-color: rgba(176, 30, 30, 0.4); color: var(--ink-danger); }
+.tag--lead { background: rgba(204, 136, 0, 0.24); border-color: rgba(138, 92, 0, 0.4); color: var(--ink-amber); }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dot--in { background: var(--ink-success); }
+.dot--maybe { background: var(--amber-lift); }
+.dot--out { background: var(--amber); }
+
+/* -------------------------------------------------------------- song rows */
+
+.song-row {
+  display: grid;
+  gap: 10px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.song-row:last-child { border-bottom: 0; }
+.song-row__title { font-weight: 700; font-family: var(--font-display); font-size: var(--text-lg); letter-spacing: -0.01em; }
+.song-row__meta { color: var(--muted); font-size: var(--text-sm); }
+
+@media (min-width: 560px) {
+  .song-row { grid-template-columns: 1fr 250px; align-items: center; }
+}
+
+/* ------------------------------------------------------------------- toggle */
+
+.toggle { display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 6px 0; }
+.toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.toggle__track {
+  width: 46px; height: 27px; flex: none;
+  border-radius: 999px;
+  background: var(--surface-3);
+  border: 1px solid var(--line-strong);
+  position: relative;
+  transition: background 0.18s, border-color 0.18s;
+}
+.toggle__track::after {
+  content: "";
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 21px; height: 21px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.18s, background 0.18s;
+}
+.toggle input:checked + .toggle__track { background: var(--amber); border-color: var(--amber); }
+.toggle input:checked + .toggle__track::after { transform: translateX(19px); background: var(--ink); }
+.toggle input:focus-visible + .toggle__track { box-shadow: var(--ring); }
+.toggle__text { font-size: var(--text-sm); }
+.toggle__text small { display: block; color: var(--muted); font-size: var(--text-xs); }
+
+/* ------------------------------------------------------------------- alert */
+
+.alert {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  border: 1px solid;
+}
+.alert--warn { background: rgba(217, 119, 6, 0.22); border-color: rgba(162, 89, 4, 0.4); color: var(--ink-warning); }
+.alert--info { background: rgba(204, 136, 0, 0.18); border-color: rgba(138, 92, 0, 0.35); color: var(--ink-amber); }
+.alert--error { background: rgba(204, 136, 0, 0.14); border-color: rgba(176, 30, 30, 0.45); color: var(--ink-danger); }
+
+/* An empty list is a normal state at a jam — the night starts empty — so it
+   should read as a calm waiting sheet rather than a dashed error box. */
+.empty {
+  padding: 34px 22px;
+  text-align: center;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+/* -------------------------------------------------------------------- misc */
+
+.muted { color: var(--muted); }
+.faint { color: var(--faint); }
+.small { font-size: var(--text-sm); }
+.tiny { font-size: var(--text-xs); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.center { text-align: center; }
+.hidden { display: none !important; }
+
+.divider { height: 1px; background: var(--line); border: 0; margin: 4px 0; }
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translate(-50%, 20px);
+  padding: 12px 20px;
+  background: var(--ink);
+  color: var(--cream);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  font-size: var(--text-sm);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 90;
+}
+.toast.is-shown { opacity: 1; transform: translate(-50%, 0); }
+.toast--error { background: var(--ink-danger); color: #fff; }
+
+.sticky-bar {
+  position: sticky;
+  bottom: 0;
+  margin: 18px -18px -96px;
+  padding: 14px 18px calc(14px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(255, 253, 250, 0), var(--bg) 34%);
+  backdrop-filter: blur(6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}

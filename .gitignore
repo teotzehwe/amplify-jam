@@ -1,0 +1,10 @@
+# Live jam state — contains the host key and every player's session token.
+data/
+*.tmp
+
+.vercel/
+node_modules/
+npm-debug.log*
+.DS_Store
+.vercel
+.env*

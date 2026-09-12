@@ -1,0 +1,13 @@
+# Live jam state — host key and every player's session token. Never upload it.
+data/
+*.tmp
+
+# Pulled down by `vercel env pull`: real Redis credentials. Environment
+# variables belong in project settings, never in the upload.
+.env
+.env.*
+
+node_modules/
+test/
+.git/
+.DS_Store
