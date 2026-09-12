@@ -19,7 +19,7 @@
 .callout__kicker {
   font-family: var(--font-display);
   font-size: clamp(0.72rem, 1.3vw, 1rem);
-  letter-spacing: 0.12em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 600;
   color: var(--amber);
@@ -58,7 +58,7 @@
   align-items: baseline;
   gap: clamp(12px, 2vw, 28px);
   padding: clamp(9px, 1.5vh, 18px) clamp(14px, 1.8vw, 24px);
-  border-radius: 14px;
+  border-radius: 4px;
   background: rgba(244, 246, 251, 0.05);
   border: 1px solid rgba(244, 246, 251, 0.12);
 }
@@ -68,7 +68,7 @@
   min-width: clamp(90px, 12vw, 200px);
   font-family: var(--font-display);
   font-size: clamp(0.7rem, 1.15vw, 1rem);
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 600;
   color: var(--amber-lift);
@@ -134,7 +134,7 @@
   height: auto;
   padding: clamp(8px, 1vw, 14px);
   background: #fff;
-  border-radius: 14px;
+  border-radius: 4px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 .board__url { color: var(--amber-lift); font-size: clamp(0.7rem, 1vw, 0.95rem); }
@@ -144,7 +144,7 @@
 .board__kicker {
   font-family: var(--font-display);
   font-size: clamp(0.72rem, 1.2vw, 1rem);
-  letter-spacing: 0.12em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 600;
   color: var(--amber);
@@ -200,12 +200,12 @@
   flex-wrap: wrap;
   font-family: var(--font-display);
   font-size: clamp(0.72rem, 1.2vw, 1rem);
-  letter-spacing: 0.12em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 600;
   color: var(--amber);
 }
-.board__count { color: rgba(244, 246, 251, 0.5); letter-spacing: 0.12em; }
+.board__count { color: rgba(244, 246, 251, 0.5); letter-spacing: 0.06em; }
 
 .callout__name--list {
   font-size: clamp(1.1rem, 2.6vw, 2.8rem);

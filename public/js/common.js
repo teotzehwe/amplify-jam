@@ -268,7 +268,7 @@ export function logoMark() {
   svg.setAttribute('fill', 'none');
   svg.setAttribute('aria-hidden', 'true');
   svg.innerHTML =
-    '<path d="M4 13v-2m4 6V7m4 13V4m4 13V7m4 6v-2" stroke="#0b0d12" stroke-width="2.4" stroke-linecap="round"/>';
+    '<path d="M4 13v-2m4 6V7m4 13V4m4 13V7m4 6v-2" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/>';
   return el('div', { class: 'mark' }, svg);
 }
 

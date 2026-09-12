@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#eef1f6">
+  <meta name="theme-color" content="#ffffff">
   <title>Amplify — Host console</title>
   <link rel="stylesheet" href="/app.css">
   <link rel="stylesheet" href="/board.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='19' font-size='19'>🎛️</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%23111111'/></svg>">
   <style>
     .tabs {
       display: flex;
@@ -56,17 +56,14 @@
     /* Ink on amber, the same pairing the buttons use (5.99:1) — amber as
        text on white would only reach 2.96:1. */
     .tabs .count--alert {
-      padding: 1px 7px;
-      border-radius: 999px;
-      background: var(--amber);
       color: var(--ink);
       font-weight: 700;
       font-size: var(--text-xs);
     }
 
     .stat-strip { display: flex; gap: 22px; flex-wrap: wrap; }
-    .stat b { display: block; font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 600; }
-    .stat span { color: var(--muted); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.04em; }
+    .stat b { display: block; font-size: var(--text-xl); font-weight: 700; }
+    .stat span { color: var(--muted); font-size: var(--text-sm); }
 
     /* --- the band on stage ------------------------------------------ */
     /* Narrow, the instrument sits above the name and the action shares the
@@ -99,10 +96,9 @@
     }
     .slot__inst {
       font-size: var(--text-xs);
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      font-weight: 700;
-      color: var(--faint);
+      letter-spacing: 0;
+      font-weight: 500;
+      color: var(--muted);
     }
     .slot__name { font-family: var(--font-display); font-size: var(--text-lg); font-weight: 600; }
     .slot__why { color: var(--muted); font-size: var(--text-sm); margin-top: 2px; }
@@ -110,11 +106,9 @@
     .slot .btn { justify-self: start; }
 
     .sub-head {
-      font-size: var(--text-xs);
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      font-weight: 700;
-      color: var(--faint);
+      font-size: var(--text-sm);
+      font-weight: 500;
+      color: var(--muted);
     }
 
     /* --- the sign-up bench ------------------------------------------ */
@@ -143,10 +137,7 @@
 
     /* Requests waiting on a yes or no. An amber edge, not a red one: this
        needs attention, it is not an error. */
-    .card--alert {
-      border-color: rgba(224, 168, 0, 0.45);
-      background: linear-gradient(180deg, rgba(224, 168, 0, 0.12), rgba(255, 255, 255, 0.85));
-    }
+    .card--alert { border-color: var(--line-strong); background: var(--surface-2); }
 
     /* --- roster ----------------------------------------------------- */
     .roster { display: grid; gap: 10px; }
@@ -165,41 +156,37 @@
     .turns {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 3px 10px;
-      border-radius: 999px;
-      background: var(--amber);
-      border: 1px solid var(--amber);
-      color: var(--ink);
-      font-size: var(--text-xs);
-      font-weight: 700;
+      gap: 4px;
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
+      border: 0;
+      color: var(--muted);
+      font-size: var(--text-sm);
+      font-weight: 500;
     }
-    .queue-bar { height: 5px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
-    .queue-bar i { display: block; height: 100%; background: var(--amber); }
+    .queue-bar { height: 2px; border-radius: 0; background: var(--surface-3); overflow: hidden; }
+    .queue-bar i { display: block; height: 100%; background: var(--ink); }
 
     /* --- song list -------------------------------------------------- */
     .song-card {
       display: grid;
-      gap: 12px;
-      padding: 15px 16px;
-      border-radius: var(--radius);
-      background: var(--surface);
-      border: 1px solid var(--line);
-      transition: border-color 0.15s;
+      gap: 10px;
+      padding: 14px 0;
+      border-radius: 0;
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid var(--line);
     }
-    .song-card:hover { border-color: var(--ink); }
+    .song-card:hover { border-color: var(--line); }
     @media (min-width: 700px) {
       .song-card { grid-template-columns: 1fr auto; align-items: center; }
     }
-    .song-card__title { font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); }
-    .song-card--next { border-color: rgba(122, 92, 0, 0.4); background: rgba(224, 168, 0, 0.1); }
-    .song-card--played { opacity: 0.6; }
-    .song-card--deck { border-color: var(--amber); background: rgba(224, 168, 0, 0.08); opacity: 1; }
+    .song-card__title { font-weight: 600; font-size: var(--text-md); }
+    .song-card--next { background: transparent; border-bottom-color: var(--line-strong); }
+    .song-card--played { opacity: 0.5; }
+    .song-card--deck { border-bottom: 2px solid var(--ink); opacity: 1; }
     @media (min-width: 700px) {
-      /* Queue rows carry reorder arrows, so they run three across. Cards
-         without them (the chooser, the request list) keep the two-column
-         shape — otherwise the action button inherits the 1fr and stretches
-         the width of the card. */
       .song-card { grid-template-columns: auto 1fr auto; }
       .song-card--plain { grid-template-columns: 1fr auto; }
     }
