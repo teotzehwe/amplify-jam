@@ -1,8 +1,7 @@
 # Amplify — design system
 
-**Intent:** a warm, editorial, poster-like interface for a live music night, legible
-from a phone in a dim room and from a TV across that room — on the Impeccable
-palette, with zero dependencies and no build step.
+**Intent:** a clean late-night studio interface for a live music night — cool stone paper, electric gold, teal for on-air moments — legible from a phone in a dim room and from a TV across that room. Zero dependencies, no build step.
+
 
 Rules use **must** (non-negotiable) and **should** (recommended). Every rule is
 anchored to a token, a measured threshold, or an example — never to an adjective.
@@ -15,8 +14,8 @@ Three surfaces, one system:
 
 | Surface | Read from | Ground | Job |
 |---|---|---|---|
-| `/` musician | a phone, held | warm paper | Put your name down |
-| `/host` console | a phone or laptop, working | warm paper | Pick the band |
+| `/` musician | a phone, held | cool stone | Put your name down |
+| `/host` console | a phone or laptop, working | cool stone | Pick the band |
 | `/board` stage | a TV, 3–10 m away | `--ink` | Show who is on the list |
 
 The board inverts because a white screen projected into a dim venue is glare. It
@@ -37,25 +36,25 @@ never raw values.
 
 Brand hues — used as **fills only**:
 
-`--amber #cc8800` (primary) · `--burnt #c55221` (secondary, section grounds)
-· `--amber-lift #d39926` (lifted for the dark board) · `--cream #fdf4e3`
-· `--sand #ece0c9` · `--ink #111827`
+`--amber #e0a800` (primary, electric gold) · `--burnt #0f766e` (secondary, live
+teal / section grounds) · `--amber-lift #f0c040` (lifted for the dark board)
+· `--cream #f4f6fb` (cool mist) · `--sand #e2e5ec` · `--ink #0b0d12`
 
 Semantic: `--success #16a34a` · `--warning #d97706` · `--danger #dc2626`
 
 Text-safe darkenings — for **text on light grounds**. All clear 4.5:1 on
 **both** `--surface` and `--cream`:
 
-| Token | Hex | on white | on cream |
-|---|---|---|---|
-| `--ink-amber` | `#8a5c00` | 5.81 | 5.32 |
-| `--ink-burnt` | `#a7451c` | 5.98 | 5.48 |
-| `--ink-success` | `#107a37` | 5.44 | 4.98 |
-| `--ink-warning` | `#a25904` | 5.29 | 4.85 |
-| `--ink-danger` | `#b01e1e` | 6.88 | 6.30 |
+| Token | Hex | Role |
+|---|---|---|
+| `--ink-amber` | `#7a5c00` | gold as text |
+| `--ink-burnt` | `#0f766e` | teal as text (also the fill) |
+| `--ink-success` | `#107a37` | success as text |
+| `--ink-warning` | `#a25904` | warning as text |
+| `--ink-danger` | `#b01e1e` | danger as text |
 
 > **Rule.** Text **must not** use a raw brand hue on a light ground. Amber as
-> text is 2.96:1 on white. Use the matching `--ink-*` variant.
+> text fails 4.5:1 on white. Use the matching `--ink-*` variant.
 >
 > - Do: `color: var(--ink-amber)` on `--surface`
 > - Don't: `color: var(--amber)` on `--surface`
@@ -64,20 +63,24 @@ Text-safe darkenings — for **text on light grounds**. All clear 4.5:1 on
 >
 > | Fill | Text | Ratio |
 > |---|---|---|
-> | `--amber` | `--ink` | 5.99 |
-> | `--burnt` | `#fff` | 4.56 |
+> | `--amber` | `--ink` | 9.04 |
+> | `--burnt` | `#fff` | 5.47 |
 > | `--danger` | `#fff` | 4.83 |
-> | `--success` | `--ink` | 5.38 |
+> | `--success` | `--ink` | ≥5.3 |
 >
-> Never invert these. White on amber is 2.96:1; ink on burnt is 3.89:1.
+> Never invert these. White on amber fails; ink on teal fails.
 
 > **Rule.** Semantic hues carry meaning and **must not** be used decoratively:
 > success = signed up / covered, warning = needs attention, danger =
 > destructive or blocked.
 
+
 ### 2.2 Surfaces
 
-`--bg #faf3e6` · `--surface #fffdf8` · `--surface-2 #f8f0df` · `--surface-3 #f1e6d0`
+`--bg #eef1f6` · `--surface #ffffff` · `--surface-2 #f5f7fb` · `--surface-3 #e8ebf2`
+
+Atmosphere (gold + teal blooms + quiet grain) lives on `body` pseudo-elements
+and **must** stay decorative — never the only cue for meaning.
 
 Two grounds carry meaning:
 
@@ -136,12 +139,11 @@ Faces — matched to Trackr (`study-planner`), one stack for everything:
 Spacing — **4 / 8 / 12 / 16 / 24 / 32** as `--space-1`…`--space-6`. Same rule:
 land on a step.
 
-Radius is **two** values, deliberately: `--radius: 10px` for controls,
-`--radius-lg: 18px` for sheets. A single 12px everywhere made a chip, a button
-and a card read at the same level.
+Radius is **two** values, deliberately: `--radius: 12px` for controls,
+`--radius-lg: 20px` for sheets.
 
-Shadows carry brown, not neutral black, so they sit *in* the paper:
-`--shadow-soft` for cards, `--shadow` for lifted things (toasts).
+Shadows carry cool graphite, not brown paper: `--shadow-soft` for cards,
+`--shadow` for lifted things (toasts).
 
 ---
 
@@ -218,7 +220,7 @@ primary navigation must not require dragging to discover.
 Confirmed state uses a warm fill, a `--ink-success` inset edge and an accent title.
 
 > **Rule.** A confirmed state **must not** read as disabled. The original
-> blue-grey wash on warm paper looked greyed-out — the wrong feeling for
+> blue-grey wash on cool stone looked greyed-out — the wrong feeling for
 > "you're on for this one".
 
 ### 3.6 Board rows `.callout__row`
@@ -351,7 +353,7 @@ Existing UI predating this system:
    matched to Trackr. `--font-display` no longer names a condensed face either.
 3. **`board.css` uses `clamp()` rather than the scale.** Intentional: the stage
    display scales with viewport, not breakpoints. Keep it that way.
-4. **Impeccable's palette is adopted in full; Chakra Petch is not.** The face
+4. **Signal's palette is adopted in full; Chakra Petch is not.** The face
    needs a network font or a vendored binary, both of which conflict with
    offline-first, so the Trackr system stack stands in. If Chakra Petch is
    ever wanted, self-host a `woff2` and set `--font-display` — do not add a CDN.

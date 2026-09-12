@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#faf3e6">
+  <meta name="theme-color" content="#eef1f6">
   <title>Amplify — Jam sign-up</title>
   <link rel="stylesheet" href="/app.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='19' font-size='19'>🎸</text></svg>">
@@ -15,23 +15,18 @@
       padding: 14px;
       margin-bottom: 8px;
       border-radius: var(--radius);
-      background: var(--surface);
+      background: rgba(255, 255, 255, 0.72);
       border: 1px solid var(--line);
-      transition: border-color 0.15s, background 0.15s;
+      transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
     }
-    /* Confirmed, not disabled. The blue-grey wash read as greyed-out against
-       warm paper — the wrong feeling for "you're on for this one". The blue
-       stays as the semantic edge, but the fill is warm and the title takes the
-       accent so the row reads as a positive state. */
+    .signup-row:hover { border-color: var(--line-strong); box-shadow: var(--shadow-soft); }
+    /* Confirmed = live, not disabled. Teal edge + cool mist fill. */
     .signup-row--in {
-      border-color: rgba(16, 122, 55, 0.5);
-      background: linear-gradient(180deg, rgba(22, 163, 74, 0.14), rgba(253, 244, 227, 0.5));
-      box-shadow: inset 3px 0 0 var(--ink-success);
+      border-color: rgba(15, 118, 110, 0.45);
+      background: linear-gradient(180deg, rgba(15, 118, 110, 0.1), rgba(255, 255, 255, 0.85));
+      box-shadow: inset 3px 0 0 var(--burnt);
     }
-    .signup-row--in .song-row__title { color: var(--ink-success); }
-    /* Inputs are width:100% globally, which inside this flex row gave the
-       select the whole line and bumped Sign up onto its own — about 50px of
-       dead height per song, over a setlist that can run to a dozen. */
+    .signup-row--in .song-row__title { color: var(--ink-burnt); }
     .signup-row select {
       width: auto;
       flex: 1 1 110px;
@@ -44,8 +39,8 @@
     }
 
     .you-card {
-      background: var(--cream);
-      border: 1px solid rgba(204, 136, 0, 0.35);
+      background: linear-gradient(145deg, rgba(224, 168, 0, 0.12), rgba(255, 255, 255, 0.9) 42%);
+      border: 1px solid rgba(224, 168, 0, 0.32);
     }
     .you-card h2 { font-size: var(--text-xl); }
     .you-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
@@ -54,14 +49,9 @@
       font-family: var(--font-display);
       font-size: var(--text-2xl);
       font-weight: 700;
-      letter-spacing: -0.02em;
+      letter-spacing: -0.03em;
       line-height: 1;
     }
-    /* "Turns tonight" needs 96px in an 88px column. Going smaller would drop
-       under 11px and off the scale, and shortening it to "Turns" makes it
-       ambiguous against "Songs played" — so both lines get room and every
-       label reserves the same two-line box, which aligns the three baselines
-       and makes the wrap read as intended rather than cramped. */
     .you-stat span {
       display: block;
       min-height: 2.6em;
@@ -69,33 +59,30 @@
       color: var(--muted);
       font-size: var(--text-xs);
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.06em;
       line-height: 1.3;
     }
 
-    /* The burnt-orange section.
-       Impeccable alternates cream and burnt grounds; this is the page's burnt
-       one, and it is the right place for it — being called to play is the
-       loudest moment in the app, and the panel is pure display (a kicker, a
-       line, a sentence) with no controls, which is what makes a saturated
-       ground safe. White text, not ink: ink on burnt is only 3.89:1, white is
-       4.56:1. */
+    /* Live call — teal ground, white type (5.47:1). Pure display, no controls. */
     .onstage {
       border: 1px solid var(--burnt);
-      background: var(--burnt);
+      background:
+        radial-gradient(600px 200px at 100% 0%, rgba(224, 168, 0, 0.28), transparent 55%),
+        var(--burnt);
       color: #fff;
       border-radius: var(--radius-lg);
       padding: var(--space-5);
-      animation: pulse-in 0.4s ease-out;
+      animation: pulse-in 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+      box-shadow: 0 16px 40px rgba(15, 118, 110, 0.28);
     }
     .onstage .kicker {
       font-family: var(--font-display);
       font-size: var(--text-sm);
-      letter-spacing: 0.2em;
+      letter-spacing: 0.22em;
       text-transform: uppercase;
       font-weight: 600;
     }
-    .onstage .what { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 600; margin-top: 4px; }
+    .onstage .what { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 700; margin-top: 4px; letter-spacing: -0.02em; }
     .onstage p { color: #fff; }
     @keyframes pulse-in { from { transform: scale(0.98); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
@@ -122,6 +109,7 @@
       font-size: var(--text-xs);
       font-weight: 700;
       flex: none;
+      box-shadow: 0 2px 8px rgba(224, 168, 0, 0.35);
     }
   </style>
 </head>

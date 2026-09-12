@@ -1,10 +1,6 @@
-/* The call sheet at reading-across-a-room size. Shared by the host's
-   full-screen call-out and the stage display at /board.
-
-   This is the one surface that stays dark. The rest of the app is warm paper,
-   but a white screen projected into a dim venue is glare, so the call sheet
-   inverts to ink and cream (16.2:1) with amber for the kicker and a lifted
-   amber for the instrument labels (7.1:1). Same palette, opposite ground. */
+/* Stage display + host callout — dark Signal surface.
+   Cool charcoal ground, cream type, electric gold kickers, teal instrument
+   labels. Same palette as the light app, inverted for a dim venue. */
 
 .callout {
   position: fixed;
@@ -14,7 +10,10 @@
   flex-direction: column;
   gap: clamp(14px, 2.4vh, 30px);
   padding: clamp(20px, 4vh, 54px) clamp(20px, 4vw, 64px);
-  background: var(--ink);
+  background:
+    radial-gradient(1000px 600px at 10% -10%, rgba(224, 168, 0, 0.14), transparent 50%),
+    radial-gradient(900px 500px at 100% 0%, rgba(15, 118, 110, 0.18), transparent 55%),
+    var(--ink);
   color: var(--cream);
   overflow: auto;
 }
@@ -32,14 +31,14 @@
 .callout__song {
   font-family: var(--font-display);
   font-size: clamp(2.1rem, 6.6vw, 5.2rem);
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   line-height: 1.02;
   color: var(--cream);
 }
 
 .callout__meta {
-  color: rgba(253, 244, 227, 0.66);
+  color: rgba(244, 246, 251, 0.66);
   font-size: clamp(0.9rem, 1.8vw, 1.4rem);
   margin-top: 6px;
 }
@@ -53,9 +52,6 @@
 }
 @media (min-width: 900px) {
   .callout__grid--split { grid-template-columns: 1fr 1fr; column-gap: clamp(20px, 3vw, 48px); }
-
-  /* Two columns halves the room per name, so scale type down to keep most
-     full names on a single line. */
   .callout__grid--split .callout__inst { min-width: clamp(76px, 7vw, 130px); }
   .callout__grid--split .callout__name { font-size: clamp(1.4rem, 2.9vw, 2.7rem); }
 }
@@ -65,9 +61,10 @@
   align-items: baseline;
   gap: clamp(12px, 2vw, 28px);
   padding: clamp(9px, 1.5vh, 18px) clamp(14px, 1.8vw, 24px);
-  border-radius: 12px;
-  background: rgba(253, 244, 227, 0.06);
-  border: 1px solid rgba(253, 244, 227, 0.14);
+  border-radius: 14px;
+  background: rgba(244, 246, 251, 0.05);
+  border: 1px solid rgba(244, 246, 251, 0.12);
+  backdrop-filter: blur(8px);
 }
 
 .callout__inst {
@@ -84,8 +81,8 @@
 .callout__name {
   font-family: var(--font-display);
   font-size: clamp(1.5rem, 4.2vw, 3.4rem);
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-weight: 700;
+  letter-spacing: -0.015em;
   line-height: 1.08;
   color: var(--cream);
 }
@@ -95,9 +92,9 @@
   align-items: center;
   gap: 18px;
   flex-wrap: wrap;
-  color: rgba(253, 244, 227, 0.55);
+  color: rgba(244, 246, 251, 0.55);
   font-size: clamp(0.75rem, 1.2vw, 1rem);
-  border-top: 1px solid rgba(253, 244, 227, 0.16);
+  border-top: 1px solid rgba(244, 246, 251, 0.14);
   padding-top: clamp(10px, 1.6vh, 18px);
 }
 
@@ -108,7 +105,6 @@
   z-index: 101;
 }
 
-/* Keep the song title clear of the floating Played/Close controls. */
 .callout--overlay .callout__head { padding-right: 230px; }
 
 /* ------------------------------------------------------- the stage display */
@@ -119,7 +115,10 @@
   gap: clamp(16px, 3vh, 36px);
   min-height: 100vh;
   padding: clamp(20px, 4vh, 48px) clamp(20px, 4vw, 56px);
-  background: var(--ink);
+  background:
+    radial-gradient(1100px 640px at 0% -20%, rgba(224, 168, 0, 0.12), transparent 55%),
+    radial-gradient(900px 520px at 100% 0%, rgba(15, 118, 110, 0.16), transparent 50%),
+    var(--ink);
   color: var(--cream);
 }
 
@@ -142,7 +141,8 @@
   height: auto;
   padding: clamp(8px, 1vw, 14px);
   background: #fff;
-  border-radius: 12px;
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 .board__url { color: var(--amber-lift); font-size: clamp(0.7rem, 1vw, 0.95rem); }
 
@@ -156,26 +156,26 @@
   font-weight: 600;
   color: var(--amber);
 }
-.board__kicker--next { color: var(--amber-lift); }
+.board__kicker--next { color: #5eead4; } /* teal-lift on ink ≈ 10:1 */
 
 .board__now {
   font-family: var(--font-display);
   font-size: clamp(2rem, 5.6vw, 4.6rem);
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.02;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.02em;
   color: var(--cream);
 }
 
 .board__next {
   font-family: var(--font-display);
   font-size: clamp(1.15rem, 2.6vw, 2.1rem);
-  font-weight: 600;
+  font-weight: 650;
   line-height: 1.1;
-  color: rgba(253, 244, 227, 0.82);
+  color: rgba(244, 246, 251, 0.82);
 }
 
-.board__meta { color: rgba(253, 244, 227, 0.6); font-size: clamp(0.85rem, 1.5vw, 1.25rem); margin-top: 4px; }
+.board__meta { color: rgba(244, 246, 251, 0.6); font-size: clamp(0.85rem, 1.5vw, 1.25rem); margin-top: 4px; }
 .board__meta--small { font-size: clamp(0.75rem, 1.1vw, 1rem); }
 
 .board .callout__grid { flex: 1; }
@@ -187,18 +187,10 @@
   justify-items: center;
   gap: 10px;
   text-align: center;
-  color: rgba(253, 244, 227, 0.62);
+  color: rgba(244, 246, 251, 0.62);
   font-size: clamp(1rem, 2vw, 1.6rem);
 }
-/* 0.52 — at 0.45 this measured 4.07:1, under the floor for text this size. */
-.board__waiting { color: rgba(253, 244, 227, 0.52); font-size: clamp(0.85rem, 1.4vw, 1.15rem); }
-
-/* ------------------------------------------------------- the sign-up sheet */
-
-/* The list of who has put their name down. This is the screen's main event
-   between songs: people sign up on a phone and then look up to check it
-   landed, so it gets the full width and the largest type that still fits a
-   whole instrument's worth of names on one line. */
+.board__waiting { color: rgba(244, 246, 251, 0.52); font-size: clamp(0.85rem, 1.4vw, 1.15rem); }
 
 .board__panel {
   flex: 1;
@@ -220,15 +212,9 @@
   font-weight: 600;
   color: var(--amber);
 }
-.board__count { color: rgba(253, 244, 227, 0.5); letter-spacing: 0.12em; }
+.board__count { color: rgba(244, 246, 251, 0.5); letter-spacing: 0.12em; }
 
-/* Several names share a row, so this runs smaller than a single called name
-   and is allowed to wrap rather than shrink the whole sheet. */
 .callout__name--list {
-  /* Capped at 2.8rem rather than 2.2rem: on a 1080p screen the sheet was
-     leaving a quarter of the height empty above and below, and the whole
-     point of these names is being read from the back of the room. Still well
-     under a called name (3.4rem) so the two never compete. */
   font-size: clamp(1.1rem, 2.6vw, 2.8rem);
   line-height: 1.22;
   display: flex;
@@ -237,19 +223,14 @@
   column-gap: 0.45em;
   row-gap: 0.1em;
 }
-.board__sep { color: rgba(253, 244, 227, 0.38); font-weight: 400; }
+.board__sep { color: rgba(244, 246, 251, 0.38); font-weight: 400; }
 @media (min-width: 900px) {
   .callout__grid--split .callout__name--list { font-size: clamp(1rem, 1.9vw, 1.7rem); }
 }
 
 .board__who { white-space: nowrap; }
-/* Still on the list, just not in the room this minute — worth showing, not
-   worth the host calling out and waiting on. */
 .board__who--away {
-  /* 0.52 (5.11:1), not 0.42 (3.67:1). These are people's names on a screen
-     across a room — dimmed, not hard to read. The strike-through is what
-     carries the meaning, so contrast does not have to. */
-  color: rgba(253, 244, 227, 0.52);
+  color: rgba(244, 246, 251, 0.52);
   text-decoration: line-through;
   text-decoration-thickness: 1px;
 }

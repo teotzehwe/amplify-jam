@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#faf3e6">
+  <meta name="theme-color" content="#eef1f6">
   <title>Amplify — Host console</title>
   <link rel="stylesheet" href="/app.css">
   <link rel="stylesheet" href="/board.css">
@@ -13,15 +13,16 @@
       display: flex;
       gap: 4px;
       padding: 4px;
-      background: var(--surface-3);
+      background: rgba(255, 255, 255, 0.55);
       border: 1px solid var(--line);
-      border-radius: var(--radius);
+      border-radius: 999px;
       overflow-x: auto;
+      backdrop-filter: blur(10px);
     }
     .tabs button {
       padding: 9px 16px;
       border: 0;
-      border-radius: 10px;
+      border-radius: 999px;
       background: transparent;
       color: var(--muted);
       font-weight: 600;
@@ -31,7 +32,11 @@
       transition: all 0.15s;
     }
     .tabs button:hover { color: var(--text); background: rgba(255, 255, 255, 0.7); }
-    .tabs button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-soft); }
+    .tabs button[aria-selected="true"] {
+      background: var(--ink);
+      color: #fff;
+      box-shadow: 0 6px 18px rgba(11, 13, 18, 0.18);
+    }
     /* Primary navigation, and 40px by default — under the thumb floor. */
     @media (pointer: coarse) { .tabs button { min-height: 44px; } }
     /* Four tabs plus their counts need ~355px of the 339px a 375px phone
@@ -137,7 +142,10 @@
 
     /* Requests waiting on a yes or no. An amber edge, not a red one: this
        needs attention, it is not an error. */
-    .card--alert { border-color: rgba(204, 136, 0, 0.55); background: rgba(204, 136, 0, 0.07); }
+    .card--alert {
+      border-color: rgba(224, 168, 0, 0.45);
+      background: linear-gradient(180deg, rgba(224, 168, 0, 0.12), rgba(255, 255, 255, 0.85));
+    }
 
     /* --- roster ----------------------------------------------------- */
     .roster { display: grid; gap: 10px; }
@@ -183,9 +191,9 @@
       .song-card { grid-template-columns: 1fr auto; align-items: center; }
     }
     .song-card__title { font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); }
-    .song-card--next { border-color: rgba(138, 92, 0, 0.5); background: rgba(204, 136, 0, 0.09); }
+    .song-card--next { border-color: rgba(122, 92, 0, 0.4); background: rgba(224, 168, 0, 0.1); }
     .song-card--played { opacity: 0.6; }
-    .song-card--deck { border-color: var(--amber); background: rgba(204, 136, 0, 0.07); opacity: 1; }
+    .song-card--deck { border-color: var(--amber); background: rgba(224, 168, 0, 0.08); opacity: 1; }
     @media (min-width: 700px) {
       /* Queue rows carry reorder arrows, so they run three across. Cards
          without them (the chooser, the request list) keep the two-column
