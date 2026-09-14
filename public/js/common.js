@@ -51,13 +51,21 @@ export const tokens = {
 
 /* --------------------------------------------------------------------- api */
 
-export async function api(path, { method = 'GET', body } = {}) {
+/**
+ * @param {string} path
+ * @param {{ method?: string, body?: object, as?: 'player' | 'host' | 'auto' }} [opts]
+ *   `as: 'player'` omits the host key so a musician action cannot accidentally
+ *   inherit host privileges from the same browser.
+ */
+export async function api(path, { method = 'GET', body, as = 'auto' } = {}) {
+  const sendHost = as !== 'player' && tokens.host;
+  const sendPlayer = as !== 'host' && tokens.player;
   const res = await fetch(`/api${path}`, {
     method,
     headers: {
       ...(body ? { 'content-type': 'application/json' } : {}),
-      ...(tokens.host ? { 'x-host-token': tokens.host } : {}),
-      ...(tokens.player ? { 'x-player-token': tokens.player } : {}),
+      ...(sendHost ? { 'x-host-token': tokens.host } : {}),
+      ...(sendPlayer ? { 'x-player-token': tokens.player } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });

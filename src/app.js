@@ -259,12 +259,18 @@ route('DELETE', /^\/api\/players\/([\w-]+)$/, (ctx) => {
 route('POST', /^\/api\/songs$/, (ctx) => {
   const isHost = store.isHost(ctx.hostToken);
   const me = store.playerByToken(ctx.playerToken);
-  if (!isHost && !store.state.jam.allowSuggestions) throw new HttpError(403, 'Suggestions are closed');
-  if (!isHost && !me) throw new HttpError(403, 'Sign up before suggesting songs');
+  // Host setlist add: explicit `hostAdd` from the console, or a host-only
+  // session with no player token. Everything else is a room request — including
+  // when the same browser also holds the host key (host testing both roles on
+  // one phone), which used to auto-approve and put songs on the sign-up sheet
+  // before anyone vetted them.
+  const hostAdd = isHost && (ctx.body?.hostAdd === true || !me);
 
-  // Anything the host adds is already vetted — they are the one doing the
-  // vetting. A request from the room waits until they have looked at it.
-  const status = isHost || !store.state.jam.requireApproval ? 'approved' : 'pending';
+  if (!hostAdd && !store.state.jam.allowSuggestions) throw new HttpError(403, 'Suggestions are closed');
+  if (!hostAdd && !me) throw new HttpError(403, 'Sign up before suggesting songs');
+  if (ctx.body?.hostAdd && !isHost) throw new HttpError(403, 'Host key required');
+
+  const status = hostAdd || !store.state.jam.requireApproval ? 'approved' : 'pending';
 
   const song = {
     id: newId('s'),
@@ -274,7 +280,7 @@ route('POST', /^\/api\/songs$/, (ctx) => {
     notes: str(ctx.body.notes, { max: 200 }),
     slots: Array.isArray(ctx.body.slots) ? parseSlots(ctx.body.slots, null) : null,
     status,
-    suggestedBy: isHost ? null : me.id,
+    suggestedBy: hostAdd ? null : me.id,
     addedAt: Date.now(),
   };
   store.update((state) => state.songs.push(song));

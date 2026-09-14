@@ -269,6 +269,9 @@ function suggestSong(you) {
     }
     const res = await api('/songs', {
       method: 'POST',
+      // Never send the host key with a room request — same phone often holds
+      // both tokens, and that used to put songs on the sign-up sheet unvetted.
+      as: 'player',
       body: { title: suggestion.title, artist: suggestion.artist },
     });
     suggestion.title = '';

@@ -264,6 +264,29 @@ test('a signed-in player can suggest songs, with no limit on how many', async ()
 
 /* ------------------------------------------------------------- vetting */
 
+test('a request stays pending even when the browser also holds the host key', async () => {
+  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  const asker = await joinAs('Asker', ['Guitar']);
+
+  // Same phone often has both tokens after the host opens their console.
+  // Without an explicit hostAdd flag that must not put the song on the sheet.
+  const sneaky = await call('/songs', {
+    method: 'POST',
+    body: { title: 'Not Yet' },
+    player: asker.data.token,
+    host: true,
+  });
+  assert.equal(sneaky.data.status, 'pending');
+
+  const hostAdd = await call('/songs', {
+    method: 'POST',
+    body: { title: 'Host Pick', hostAdd: true },
+    player: asker.data.token,
+    host: true,
+  });
+  assert.equal(hostAdd.data.status, 'approved');
+});
+
 test('a request waits for the host, and nobody can sign up for it meanwhile', async () => {
   await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
   const asker = await joinAs('Asker', ['Guitar']);

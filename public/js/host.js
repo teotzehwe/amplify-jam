@@ -561,6 +561,9 @@ function songsTab() {
       body: {
         title,
         artist: $('#s-artist').value.trim(),
+        // Marks this as a host setlist add so it skips the request queue —
+        // even if this browser also has a player session open.
+        hostAdd: true,
       },
     });
     for (const id of ['#s-title', '#s-artist']) $(id).value = '';
