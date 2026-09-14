@@ -78,8 +78,8 @@
   --sunken: var(--sand);
 
   --text: var(--ink);
-  --muted: rgba(26, 28, 18, 0.64);
-  --faint: rgba(26, 28, 18, 0.55);
+  --muted: rgba(26, 28, 18, 0.70);
+  --faint: rgba(26, 28, 18, 0.64); /* ≥4.5:1 on parchment + sand */
 
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;

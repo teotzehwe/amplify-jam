@@ -90,6 +90,9 @@ warm earth-lift `#c4a574` for “Next” kickers (not teal).
 
 `--bg #f7f2e8` · `--surface #fbf7ef` · `--surface-2 #f0e9db` · `--surface-3 #e6dcc8`
 
+Text opacities on parchment (alpha-blended, must clear 4.5:1 on `--sand` too):
+`--muted` at 0.70 · `--faint` at 0.64. Do not lower either without re-measuring.
+
 Atmosphere (soft olive + earth blooms on parchment) lives on `body` and **must**
 stay decorative — never the only cue for meaning.
 
