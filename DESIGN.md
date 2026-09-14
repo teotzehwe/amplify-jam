@@ -1,17 +1,14 @@
 # Amplify — design system
 
-**Intent:** a Tuscan editorial craft interface for a live music night — warm
-parchment paper, olive `#465016`, olive-black ink — legible from a phone in a
-dim room and from a TV across that room. Inspired by MONOGRID’s *The Tuscan
-Journey Begins* (Weekend Max Mara): craft and atmosphere, not chrome. Zero
-dependencies, no build step.
+**Intent:** a friendly night-out interface for open jam nights — warm cream,
+olive green, bold rounded type — easy on a phone in a busy room and clear on a
+TV across that room. Closer in spirit to Cordy’s approachable energy than to
+sleek fashion-editorial craft. Zero dependencies, no build step.
 
-**Composition (the anti-vibecode rule).** The palette alone is not enough. The
-layout **must** read as an editorial sheet: letterspaced kickers, thin display
-titles, italic ledes, underline fields, typographic checklists (not chips),
-hairline folios (not nested soft cards), and one primary uppercase olive CTA.
-If a screen still looks like a SaaS onboarding wizard after a recolour, the
-composition is wrong.
+**Composition (friendly, not sleek).** Prefer bold titles, soft rounded panels,
+pill controls, sentence-case CTAs, and conversational copy. Avoid thin display
+weights, austere hairline-only sheets, and uppercase book-cover chrome when a
+warmer pattern will do.
 
 
 Rules use **must** (non-negotiable) and **should** (recommended). Every rule is

@@ -274,7 +274,7 @@ export function logoMark() {
 }
 
 /**
- * Editorial opening: letterspaced brand kicker, display title, italic lede.
+ * Friendly opening: brand mark, bold jam title, plain warm lede.
  * Optional actions sit opposite on wide screens, below on narrow ones.
  */
 export function masthead(title, subtitle, ...extra) {

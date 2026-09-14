@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f7f2e8">
+  <meta name="theme-color" content="#fff8ef">
   <title>Amplify — Host console</title>
   <link rel="stylesheet" href="/app.css">
   <link rel="stylesheet" href="/board.css">
@@ -67,11 +67,11 @@
     .person {
       display: grid;
       gap: 8px;
-      padding: 16px 0;
-      border-radius: 0;
-      background: transparent;
-      border: 0;
-      border-bottom: 1px solid var(--line);
+      padding: 16px;
+      border-radius: var(--radius);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow-soft);
     }
     .person--away { opacity: 0.5; }
     .person__top { display: flex; align-items: center; gap: 10px; }
@@ -100,22 +100,22 @@
         "who    action";
       align-items: center;
       gap: 2px 12px;
-      padding: 14px 0;
-      border-radius: 0;
-      background: transparent;
-      border: 0;
-      border-bottom: 1px solid var(--line);
+      padding: 14px 16px;
+      border-radius: var(--radius);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow-soft);
     }
     .slot__inst { grid-area: inst; }
     .slot__who { grid-area: who; min-width: 0; }
     .slot .btn { grid-area: action; }
-    .slot--resting { border-bottom-color: rgba(154, 107, 47, 0.55); background: transparent; }
+    .slot--resting { border-color: rgba(196, 92, 38, 0.35); background: rgba(196, 92, 38, 0.08); border-radius: var(--radius); padding-left: 12px; padding-right: 12px; }
     @media (min-width: 720px) {
       .slot {
         grid-template-columns: 130px 1fr auto;
         grid-template-areas: "inst who action";
         gap: 10px;
-        padding: 16px 0;
+        padding: 16px;
       }
     }
     .slot__inst {
@@ -145,12 +145,12 @@
       grid-template-columns: 1fr auto;
       gap: 8px 12px;
       align-items: center;
-      padding: 14px 0;
-      border-radius: 0;
-      background: transparent;
-      border: 0;
-      border-bottom: 1px solid var(--line);
-      transition: color 0.15s;
+      padding: 14px 16px;
+      border-radius: var(--radius);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow-soft);
+      transition: border-color 0.15s, transform 0.15s;
     }
     .pick-row:hover { border-color: var(--line-strong); }
     .pick-row--away { opacity: 0.55; }

@@ -88,7 +88,7 @@ function instrumentPicker(selected, onChange, inputId = 'add-instrument') {
           onChange();
         },
       },
-        el('span', { class: 'choice__tick', 'aria-hidden': 'true' }, on ? '●' : '○'),
+        el('span', { class: 'choice__tick', 'aria-hidden': 'true' }, on ? '✓' : '+'),
         el('span', { class: 'choice__label' }, name),
       ),
     );
@@ -97,7 +97,7 @@ function instrumentPicker(selected, onChange, inputId = 'add-instrument') {
   const input = el('input', {
     id: inputId,
     type: 'text',
-    placeholder: 'Something else? Write it and press return',
+    placeholder: 'Something else? Type it and hit return',
     'aria-label': 'Add an instrument that is not listed',
     maxLength: 40,
     onKeydown: (e) => {
@@ -332,7 +332,7 @@ function signupView() {
   });
 
   return el('div', { class: 'stack stack--lg' },
-    masthead(state.jam.name, 'Put your name down for tonight.'),
+    masthead(state.jam.name, 'Hey! Jump in and tell us who you are.'),
 
     el('section', { class: 'folio' },
       el('div', { class: 'field' },
@@ -342,20 +342,20 @@ function signupView() {
           type: 'text',
           maxLength: 60,
           autocomplete: 'name',
-          placeholder: 'The name you want called out',
+          placeholder: 'What should we call you?',
           value: draft.name,
           onInput: (e) => { draft.name = e.target.value; },
         }),
       ),
 
-      el('div', { class: 'folio__rule' }, el('span', { class: 'kicker' }, 'What you play')),
+      el('div', { class: 'folio__rule' }, el('span', { class: 'kicker' }, 'What do you play?')),
 
-      el('p', { class: 'section-note' }, 'Choose every instrument you might pick up. As many as you like.'),
+      el('p', { class: 'section-note' }, 'Tap everything you might grab tonight — no wrong answers.'),
       instrumentPicker(draft.instruments, redraw),
     ),
 
     el('div', { class: 'sticky-bar' },
-      el('button', { class: 'btn btn--primary btn--lg btn--block', onClick: submit }, 'Join the night'),
+      el('button', { class: 'btn btn--primary btn--lg btn--block', onClick: submit }, "I'm in!"),
     ),
   );
 }
@@ -375,11 +375,11 @@ function youView(you) {
   const waited = you.stats.lastRound == null ? state.roundIndex : state.roundIndex - you.stats.lastRound;
 
   return el('div', { class: 'stack stack--lg' },
-    masthead(state.jam.name, `Signed in as ${you.name}`),
+    masthead(state.jam.name, `Nice — you're in as ${you.name}.`),
 
     yourSlot
       ? el('section', { class: 'onstage' },
-          el('div', { class: 'kicker' }, "You're up"),
+          el('div', { class: 'kicker' }, "You're up!"),
           el('div', { class: 'what' }, `${yourSlot.instrument} · ${song ? song.title : 'Next song'}`),
           el('p', { class: 'muted small', style: { marginTop: '6px' } },
             "Okay! You're in the queue, stay tuned for when the host calls everyone up!"),
@@ -413,8 +413,8 @@ function youView(you) {
 
     el('section', { class: 'folio' },
       el('div', { class: 'folio__rule' },
-        el('span', { class: 'kicker' }, 'Songs'),
-        el('span', { class: 'hint' }, 'One sign-up at a time'),
+        el('span', { class: 'kicker' }, 'Pick some songs'),
+        el('span', { class: 'hint' }, 'As many as you want'),
       ),
       songSignup(you),
     ),
