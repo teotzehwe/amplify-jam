@@ -13,6 +13,9 @@ let state = null;
 let authed = false;
 let tab = 'now';
 let songQuery = '';
+/** Held outside render so a live poll cannot wipe a half-typed add. */
+const songDraft = { title: '', artist: '' };
+let hostKeyDraft = '';
 let calloutOpen = false;
 let refresh = () => {};
 
@@ -39,15 +42,32 @@ let refresh = () => {};
 
 function draw() {
   if (!state) return;
+  const active = document.activeElement;
+  const focusId = active?.id || null;
+  const caret = active && 'selectionStart' in active ? active.selectionStart : null;
+
   render(app, authed ? console_() : gate());
   render(overlayRoot, calloutOpen && state.current ? callout(state.current, { closable: true }) : null);
+
+  // First paint gets entrance motion; subsequent live rebuilds stay still.
+  if (!app.classList.contains('is-live')) {
+    requestAnimationFrame(() => app.classList.add('is-live'));
+  }
+
+  if (!focusId) return;
+  const restored = document.getElementById(focusId);
+  if (!restored) return;
+  restored.focus({ preventScroll: true });
+  if (caret != null && restored.setSelectionRange) {
+    try { restored.setSelectionRange(caret, caret); } catch { /* not a text field */ }
+  }
 }
 
 /* -------------------------------------------------------------------- gate */
 
 function gate() {
   const submit = guard(busy(async () => {
-    const key = $('#hostkey').value.trim();
+    const key = hostKeyDraft.trim() || $('#hostkey')?.value.trim();
     if (!key) {
       shake($('#hostkey')?.closest('.field') || $('#hostkey'));
       return toast('Paste the host key first', 'error');
@@ -68,6 +88,8 @@ function gate() {
           type: 'text',
           class: 'mono',
           placeholder: 'Paste the key from the terminal',
+          value: hostKeyDraft,
+          onInput: (e) => { hostKeyDraft = e.target.value; },
           onKeydown: (e) => e.key === 'Enter' && submit(e),
         }),
       ),
@@ -161,6 +183,7 @@ const playerById = (id) => state.players.find((p) => p.id === id) || null;
 const putOnDeck = (songId) => guard(async () => {
   await api('/host/lineup', { method: 'POST', body: { songId } });
   tab = 'now';
+  await refresh(true);
 })();
 
 /** Song picker, with a live read on how many people have put their name down. */
@@ -314,10 +337,14 @@ function callSheet(current) {
   const seated = new Map(current.picks.map((p) => [p.playerId, p.instrument]));
   const bench = candidates.filter((c) => !seated.has(c.playerId));
 
-  const pick = guard((playerId, instrument) =>
-    api('/host/pick', { method: 'POST', body: { playerId, instrument } }));
-  const unpick = guard((playerId) =>
-    api('/host/unpick', { method: 'POST', body: { playerId } }));
+  const pick = guard(async (playerId, instrument) => {
+    await api('/host/pick', { method: 'POST', body: { playerId, instrument } });
+    await refresh(true);
+  });
+  const unpick = guard(async (playerId) => {
+    await api('/host/unpick', { method: 'POST', body: { playerId } });
+    await refresh(true);
+  });
 
   return el('div', { class: 'stack' },
     el('section', { class: 'card stack' },
@@ -344,11 +371,12 @@ function callSheet(current) {
         el('button', {
           class: 'btn btn--lg',
           disabled: !current.picks.length,
-          onClick: guard(async () => {
+          onClick: guard(busy(async () => {
             await api('/host/commit', { method: 'POST' });
             calloutOpen = false;
             toast('Logged — turn counts updated');
-          }),
+            await refresh(true);
+          }, 'host-commit')),
         }, 'Played ✓'),
         el('button', {
           class: 'btn btn--ghost btn--lg',
@@ -553,23 +581,28 @@ function personCard(person, maxPlays) {
 /* ------------------------------------------------------------------- songs */
 
 function songsTab() {
-  const add = guard(async () => {
-    const title = $('#s-title').value.trim();
-    if (!title) return toast('A title, at least', 'error');
+  const add = guard(busy(async () => {
+    const title = songDraft.title.trim();
+    if (!title) {
+      shake($('#s-title')?.closest('.field') || $('#s-title'));
+      return toast('A title, at least', 'error');
+    }
     await api('/songs', {
       method: 'POST',
       body: {
         title,
-        artist: $('#s-artist').value.trim(),
+        artist: songDraft.artist.trim(),
         // Marks this as a host setlist add so it skips the request queue —
         // even if this browser also has a player session open.
         hostAdd: true,
       },
     });
-    for (const id of ['#s-title', '#s-artist']) $(id).value = '';
-    $('#s-title').focus();
+    songDraft.title = '';
+    songDraft.artist = '';
     toast('Added to the setlist');
-  });
+    await refresh(true);
+    document.getElementById('s-title')?.focus();
+  }, 'host-add-song'));
 
   const queue = approvedSongs(state);
 
@@ -580,9 +613,13 @@ function songsTab() {
       el('div', { class: 'card__head' }, el('h2', {}, 'Add a song')),
       el('div', { class: 'row row--wrap' },
         el('input', { id: 's-title', type: 'text', placeholder: 'Title', class: 'grow',
-          'aria-label': 'Song title', onKeydown: (e) => e.key === 'Enter' && add() }),
+          'aria-label': 'Song title', value: songDraft.title,
+          onInput: (e) => { songDraft.title = e.target.value; },
+          onKeydown: (e) => e.key === 'Enter' && add() }),
         el('input', { id: 's-artist', type: 'text', placeholder: 'Artist', class: 'grow',
-          'aria-label': 'Artist', onKeydown: (e) => e.key === 'Enter' && add() }),
+          'aria-label': 'Artist', value: songDraft.artist,
+          onInput: (e) => { songDraft.artist = e.target.value; },
+          onKeydown: (e) => e.key === 'Enter' && add() }),
         el('button', { class: 'btn btn--primary', onClick: add }, 'Add'),
       ),
       el('p', { class: 'section-note' },
@@ -613,10 +650,11 @@ function requests() {
   const waiting = pendingSongs(state);
   if (!waiting.length) return null;
 
-  const approve = guard(async (song) => {
+  const approve = guard(busy(async (song) => {
     await api(`/host/songs/${song.id}/approve`, { method: 'POST' });
     toast(`“${song.title}” is on the setlist`);
-  });
+    await refresh(true);
+  }, 'host-approve'));
 
   const decline = (song) => api(`/songs/${song.id}`, { method: 'DELETE' })
     .then(() => toast('Declined'));

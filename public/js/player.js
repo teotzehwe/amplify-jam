@@ -56,6 +56,11 @@ function draw() {
   const you = me();
   render(app, you ? youView(you) : signupView());
 
+  // First paint gets entrance motion; live rebuilds stay still.
+  if (!app.classList.contains('is-live')) {
+    requestAnimationFrame(() => app.classList.add('is-live'));
+  }
+
   if (!focusId) return;
   const restored = document.getElementById(focusId);
   if (!restored) return;
@@ -129,23 +134,26 @@ function songSignup(you) {
       'No songs on the setlist yet. The moment the host adds one — or waves a request through — it appears here to sign up for.');
   }
 
-  const submit = guard(async (songId, instrument) => {
+  const submit = guard(busy(async (songId, instrument) => {
     await api(`/players/${you.id}`, {
       method: 'PATCH',
       body: { stances: { [songId]: 'in' }, picks: instrument ? { [songId]: instrument } : {} },
     });
     toast("You're on for it");
-  });
+    await refresh(true);
+  }, 'player-signup'));
 
-  const withdraw = guard(async (songId) => {
+  const withdraw = guard(busy(async (songId) => {
     await api(`/players/${you.id}`, { method: 'PATCH', body: { clearSongs: [songId] } });
     toast('Taken off that one');
-  });
+    await refresh(true);
+  }, 'player-withdraw'));
 
-  const unsuggest = guard(async (songId) => {
+  const unsuggest = guard(busy(async (songId) => {
     await api(`/songs/${songId}`, { method: 'DELETE' });
     toast('Suggestion removed');
-  });
+    await refresh(true);
+  }, 'player-unsuggest'));
 
   const suggesterName = (id) => state.players.find((p) => p.id === id)?.name;
 
@@ -220,10 +228,11 @@ function pendingMine(you) {
   const mine = pendingSongs(state).filter((s) => s.suggestedBy === you.id);
   if (!mine.length) return null;
 
-  const unsuggest = guard(async (songId) => {
+  const unsuggest = guard(busy(async (songId) => {
     await api(`/songs/${songId}`, { method: 'DELETE' });
     toast('Request withdrawn');
-  });
+    await refresh(true);
+  }, 'player-unsuggest-pending'));
 
   return el('section', { class: 'folio' },
     el('div', { class: 'folio__rule' },
@@ -277,7 +286,7 @@ function suggestSong(you) {
     suggestion.title = '';
     suggestion.artist = '';
     toast(res.status === 'pending' ? 'Sent to the host' : 'Added — sign up for it above');
-    draw();
+    await refresh(true);
     document.getElementById('suggest-title')?.focus();
   }));
 

@@ -5,7 +5,21 @@ import { qrSvg } from './qr.js';
 
 const app = $('#app');
 
-subscribe((state) => render(app, board(state)));
+/** Rebuild the QR only when the signup URL changes — encoding is not free. */
+let qrCache = { url: '', node: null };
+function signupQr(url) {
+  if (qrCache.url === url && qrCache.node) return qrCache.node.cloneNode(true);
+  const node = qrSvg(url, { size: 240 });
+  qrCache = { url, node };
+  return node.cloneNode(true);
+}
+
+subscribe((state) => {
+  render(app, board(state));
+  if (!app.classList.contains('is-live')) {
+    requestAnimationFrame(() => app.classList.add('is-live'));
+  }
+});
 
 /**
  * One layout in every state, so the screen never jumps around mid-set: the
@@ -28,7 +42,7 @@ function board(state) {
     ),
     el('div', { class: 'board__head' },
       el('div', { class: 'board__qr' },
-        qrSvg(signupUrl, { size: 240 }),
+        signupQr(signupUrl),
         el('div', { class: 'board__url mono' }, signupUrl.replace(/^https?:\/\//, '')),
       ),
 

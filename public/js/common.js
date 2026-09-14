@@ -111,21 +111,40 @@ export function shake(target) {
   setTimeout(clear, 400);
 }
 
-/** Run an async click handler with a busy spinner on the triggering button. */
-export function busy(fn) {
+/**
+ * In-flight locks keyed outside the DOM. A full re-render mid-request used to
+ * destroy the busy button, clear its class in `finally`, and leave the
+ * replacement clickable — double joins / double suggests / double host adds.
+ */
+const inflight = new Set();
+
+/** Run an async click handler with a busy spinner and an out-of-DOM lock. */
+export function busy(fn, lockKey = null) {
   return async (event, ...rest) => {
-    const btn = event?.currentTarget instanceof HTMLButtonElement ? event.currentTarget : null;
+    const btn = event?.currentTarget?.tagName === 'BUTTON' ? event.currentTarget : null;
+    const key = lockKey
+      || btn?.dataset?.busyKey
+      || btn?.id
+      || (typeof lockKey === 'string' ? lockKey : null)
+      || fn;
+    if (inflight.has(key)) return;
+    if (btn && (btn.classList.contains('is-busy') || btn.disabled)) return;
+    inflight.add(key);
     if (btn) {
-      if (btn.classList.contains('is-busy') || btn.disabled) return;
       btn.classList.add('is-busy');
       btn.setAttribute('aria-busy', 'true');
+      btn.disabled = true;
     }
     try {
       await fn(event, ...rest);
     } finally {
-      if (btn) {
+      inflight.delete(key);
+      // The original button may already be gone after a live redraw — only
+      // clear the node if it is still mounted.
+      if (btn?.isConnected) {
         btn.classList.remove('is-busy');
         btn.removeAttribute('aria-busy');
+        btn.disabled = false;
       }
     }
   };
@@ -191,7 +210,16 @@ export function confirmButton({
       clearTimeout(pendingConfirms.get(key));
       pendingConfirms.delete(key);
       onChange?.();
-      await onConfirm();
+      // Hold the key until the action settles so a re-armed click cannot
+      // fire a second overlapping delete/reset mid-flight.
+      pendingConfirms.set(key, setTimeout(() => pendingConfirms.delete(key), CONFIRM_MS));
+      try {
+        await onConfirm();
+      } finally {
+        clearTimeout(pendingConfirms.get(key));
+        pendingConfirms.delete(key);
+        onChange?.();
+      }
     }),
   }, armed ? confirmLabel : label);
 }
@@ -207,33 +235,50 @@ export function confirmButton({
  */
 export function subscribe(onState) {
   let last = -1;
-  let busy = false;
+  let pulling = false;
   let queued = false;
+  let retryTimer = null;
 
-  // `force` matters right after signing up: the version may already have been
-  // consumed by an SSE refresh that started before our token was stored. Such a
-  // refresh is also likely to be in flight, so a forced pull that arrives while
-  // one is running has to be re-run rather than dropped.
+  // Coalesce every refresh that arrives while a pull is in flight — not only
+  // forced ones. Dropping a plain SSE tick left the UI stale until the 10s
+  // backstop. `force` still matters right after signing up: the version may
+  // already have been consumed by a refresh that started before our token was
+  // stored.
   async function pull(force = false) {
-    if (busy) {
-      queued = queued || force;
+    if (pulling) {
+      // Never downgrade a forced pull to a soft one.
+      if (force) queued = 'force';
+      else if (!queued) queued = true;
       return;
     }
-    busy = true;
+    pulling = true;
     try {
       const state = await api('/state');
       connect(state.realtime);
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
       if (force || state.version !== last) {
         last = state.version;
         onState(state);
       }
     } catch (err) {
       console.warn('state refresh failed', err);
+      // A failed first load used to leave a blank page with no retry. Keep
+      // poking until we have something to show, then lean on poll/SSE.
+      if (last < 0 && !retryTimer) {
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          pull(true);
+        }, 1500);
+      }
     } finally {
-      busy = false;
+      pulling = false;
       if (queued) {
+        const again = queued === 'force';
         queued = false;
-        await pull(true);
+        await pull(again);
       }
     }
   }
@@ -258,6 +303,7 @@ export function subscribe(onState) {
   window.addEventListener('beforeunload', () => {
     events?.close();
     clearInterval(poll);
+    clearTimeout(retryTimer);
   });
   return pull;
 }

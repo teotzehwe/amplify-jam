@@ -201,14 +201,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.shell > * {
+/* Entrance motion only on the first paint. Live SSE/poll rebuilds must not
+   re-play rise/row-in or the console feels laggy and focus jumps mid-type. */
+.shell:not(.is-live) > * {
   animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.shell > *:nth-child(2) { animation-delay: 0.06s; }
-.shell > *:nth-child(3) { animation-delay: 0.12s; }
-.shell > *:nth-child(4) { animation-delay: 0.18s; }
-.shell > *:nth-child(5) { animation-delay: 0.22s; }
-.shell > *:nth-child(n+6) { animation-delay: 0.26s; }
+.shell:not(.is-live) > *:nth-child(2) { animation-delay: 0.06s; }
+.shell:not(.is-live) > *:nth-child(3) { animation-delay: 0.12s; }
+.shell:not(.is-live) > *:nth-child(4) { animation-delay: 0.18s; }
+.shell:not(.is-live) > *:nth-child(5) { animation-delay: 0.22s; }
+.shell:not(.is-live) > *:nth-child(n+6) { animation-delay: 0.26s; }
 
 .kicker {
   margin: 0;
@@ -781,14 +783,16 @@ select {
   gap: 10px;
   padding: 14px 0;
   border-bottom: 1px solid var(--line);
+}
+.shell:not(.is-live) .song-row {
   animation: row-in 0.3s var(--ease-out) both;
 }
-.song-row:nth-child(1) { animation-delay: 0.02s; }
-.song-row:nth-child(2) { animation-delay: 0.05s; }
-.song-row:nth-child(3) { animation-delay: 0.08s; }
-.song-row:nth-child(4) { animation-delay: 0.11s; }
-.song-row:nth-child(5) { animation-delay: 0.14s; }
-.song-row:nth-child(n+6) { animation-delay: 0.16s; }
+.shell:not(.is-live) .song-row:nth-child(1) { animation-delay: 0.02s; }
+.shell:not(.is-live) .song-row:nth-child(2) { animation-delay: 0.05s; }
+.shell:not(.is-live) .song-row:nth-child(3) { animation-delay: 0.08s; }
+.shell:not(.is-live) .song-row:nth-child(4) { animation-delay: 0.11s; }
+.shell:not(.is-live) .song-row:nth-child(5) { animation-delay: 0.14s; }
+.shell:not(.is-live) .song-row:nth-child(n+6) { animation-delay: 0.16s; }
 .song-row:last-child { border-bottom: 0; }
 .song-row__title {
   font-weight: 700;
@@ -998,7 +1002,7 @@ details.folio--details > summary + * { margin-top: 16px; }
     animation-duration: 0.01ms !important;
     animation-delay: 0.01ms !important;
   }
-  .shell > * { animation: none; }
+  .shell:not(.is-live) > *, .shell:not(.is-live) .song-row { animation: none; }
   .btn, .choice, .chip, .mark, .brand-mark, .folio, .pick-row, .slot, .person, .tabs button {
     box-shadow: none !important;
     transform: none !important;
