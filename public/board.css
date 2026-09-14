@@ -22,7 +22,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 600;
-  color: var(--amber);
+  color: var(--amber-lift); /* olive night: raw --amber is ~2:1 */
 }
 
 .callout__song {
@@ -147,7 +147,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 600;
-  color: var(--amber);
+  color: var(--amber-lift); /* ≥4.5:1 on olive night */
 }
 .board__kicker--next { color: #c4a574; } /* warm earth-lift on olive night ≈ 7:1 */
 
@@ -203,7 +203,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 600;
-  color: var(--amber);
+  color: var(--amber-lift);
 }
 .board__count { color: rgba(247, 242, 232, 0.5); letter-spacing: 0.06em; }
 
