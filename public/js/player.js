@@ -405,9 +405,7 @@ function youView(you) {
         el('span', { class: `tag tag--${you.present ? 'in' : 'out'}` }, you.present ? 'Here' : 'On a break'),
       ),
       el('p', { class: 'meta-line' },
-        `${pluralize(you.stats.plays, 'turn')} tonight · ${
-          you.stats.lastRound == null ? 'not up yet' : `${waited} since last`
-        } · ${pluralize(state.roundIndex, 'song')} played`),
+        you.stats.lastRound == null ? 'not up yet' : `${waited} since last`),
       el('label', { class: 'toggle' },
         el('input', {
           type: 'checkbox',
