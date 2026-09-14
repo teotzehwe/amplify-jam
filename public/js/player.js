@@ -261,11 +261,15 @@ function suggestSong(you) {
   const add = guard(busy(async () => {
     if (!suggestion.title.trim()) {
       shake(document.getElementById('suggest-title'));
-      return toast('It needs a title at least', 'error');
+      return toast('It needs a title', 'error');
+    }
+    if (!suggestion.artist.trim()) {
+      shake(document.getElementById('suggest-artist'));
+      return toast('Add the artist too', 'error');
     }
     const res = await api('/songs', {
       method: 'POST',
-      body: { title: suggestion.title, artist: suggestion.artist, key: suggestion.key },
+      body: { title: suggestion.title, artist: suggestion.artist },
     });
     suggestion.title = '';
     suggestion.artist = '';
@@ -297,10 +301,7 @@ function suggestSong(you) {
     ),
     el('div', { class: 'stack' },
       field('suggest-title', 'title', 'Song title'),
-      el('div', { class: 'row row--wrap' },
-        field('suggest-artist', 'artist', 'Artist (optional)', { flex: '1 1 140px' }),
-        field('suggest-key', 'key', 'Key', { flex: '0 1 90px' }),
-      ),
+      field('suggest-artist', 'artist', 'Artist'),
       el('button', { class: 'btn btn--primary btn--block', onClick: add },
         gated ? 'Send it to the host' : 'Add to the setlist'),
       el('p', { class: 'section-note' },
@@ -429,7 +430,7 @@ function youView(you) {
     pendingMine(you),
     state.jam.allowSuggestions ? suggestSong(you) : null,
 
-    section('instruments', 'Instruments',
+    section('instruments', 'My Instruments',
       instrumentPicker(
         (instrumentEdit ||= new Map(you.instruments.map((i) => [i.name, i.level]))),
         draw,
