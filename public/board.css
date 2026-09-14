@@ -57,10 +57,11 @@
   display: flex;
   align-items: baseline;
   gap: clamp(12px, 2vw, 28px);
-  padding: clamp(9px, 1.5vh, 18px) clamp(14px, 1.8vw, 24px);
-  border-radius: 4px;
-  background: rgba(247, 242, 232, 0.05);
-  border: 1px solid rgba(247, 242, 232, 0.12);
+  padding: clamp(12px, 1.8vh, 22px) 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(247, 242, 232, 0.14);
 }
 
 .callout__inst {

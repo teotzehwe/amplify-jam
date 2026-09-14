@@ -62,14 +62,36 @@
       font-size: var(--text-xs);
     }
 
-    .stat-strip { display: flex; gap: 22px; flex-wrap: wrap; }
-    .stat b { display: block; font-size: var(--text-xl); font-weight: 700; }
-    .stat span { color: var(--muted); font-size: var(--text-sm); }
+    .roster { display: grid; gap: 0; }
+    @media (min-width: 780px) { .roster { grid-template-columns: 1fr 1fr; column-gap: 32px; } }
+    .person {
+      display: grid;
+      gap: 8px;
+      padding: 16px 0;
+      border-radius: 0;
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .person--away { opacity: 0.5; }
+    .person__top { display: flex; align-items: center; gap: 10px; }
+    .person__name {
+      font-family: var(--font-display);
+      font-size: var(--text-md);
+      font-weight: 500;
+      font-style: italic;
+      letter-spacing: -0.01em;
+    }
 
-    /* --- the band on stage ------------------------------------------ */
-    /* Narrow, the instrument sits above the name and the action shares the
-       name's row — stacking all three put a seated musician at ~110px, so a
-       five-piece band did not fit on a phone screen the host is working from. */
+    .stat-strip { display: flex; gap: 28px; flex-wrap: wrap; padding: 4px 0 8px; }
+    .stat b {
+      display: block;
+      font-size: var(--text-xl);
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      color: var(--ink-amber);
+    }
+    .stat span { color: var(--muted); font-size: var(--text-sm); font-style: italic; }
     .slot {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -78,21 +100,22 @@
         "who    action";
       align-items: center;
       gap: 2px 12px;
-      padding: 12px 14px;
-      border-radius: var(--radius);
-      background: var(--surface);
-      border: 1px solid var(--line);
+      padding: 14px 0;
+      border-radius: 0;
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid var(--line);
     }
     .slot__inst { grid-area: inst; }
     .slot__who { grid-area: who; min-width: 0; }
     .slot .btn { grid-area: action; }
-    .slot--resting { border-color: rgba(154, 107, 47, 0.45); background: rgba(154, 107, 47, 0.12); }
+    .slot--resting { border-bottom-color: rgba(154, 107, 47, 0.55); background: transparent; }
     @media (min-width: 720px) {
       .slot {
         grid-template-columns: 130px 1fr auto;
         grid-template-areas: "inst who action";
         gap: 10px;
-        padding: 14px;
+        padding: 16px 0;
       }
     }
     .slot__inst {
@@ -122,18 +145,25 @@
       grid-template-columns: 1fr auto;
       gap: 8px 12px;
       align-items: center;
-      padding: 11px 14px;
-      border-radius: var(--radius);
-      background: var(--surface);
-      border: 1px solid var(--line);
-      transition: border-color 0.15s;
+      padding: 14px 0;
+      border-radius: 0;
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      transition: color 0.15s;
     }
     .pick-row:hover { border-color: var(--line-strong); }
-    .pick-row--away { opacity: 0.6; }
+    .pick-row--away { opacity: 0.55; }
     @media (min-width: 640px) {
       .pick-row { grid-template-columns: 1fr auto auto; }
     }
-    .pick-row__name { font-family: var(--font-display); font-size: var(--text-md); font-weight: 600; }
+    .pick-row__name {
+      font-family: var(--font-display);
+      font-size: var(--text-md);
+      font-weight: 500;
+      font-style: italic;
+      letter-spacing: -0.01em;
+    }
     .pick-row__why { color: var(--muted); font-size: var(--text-xs); margin-top: 1px; }
     .pick-row select { padding: 8px 10px; font-size: var(--text-sm); }
 
@@ -141,20 +171,6 @@
        needs attention, it is not an error. */
     .card--alert { border-color: var(--line-strong); background: var(--surface-2); }
 
-    /* --- roster ----------------------------------------------------- */
-    .roster { display: grid; gap: 10px; }
-    @media (min-width: 780px) { .roster { grid-template-columns: 1fr 1fr; } }
-    .person {
-      display: grid;
-      gap: 8px;
-      padding: 14px 16px;
-      border-radius: var(--radius);
-      background: var(--surface);
-      border: 1px solid var(--line);
-    }
-    .person--away { opacity: 0.55; }
-    .person__top { display: flex; align-items: center; gap: 10px; }
-    .person__name { font-family: var(--font-display); font-size: var(--text-md); font-weight: 600; }
     .turns {
       display: inline-flex;
       align-items: center;

@@ -262,6 +262,7 @@ export function coverageFor(state, song) {
   return rows;
 }
 
+/** Small olive signal — never the hero; the jam name is. */
 export function logoMark() {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
@@ -269,17 +270,24 @@ export function logoMark() {
   svg.setAttribute('aria-hidden', 'true');
   svg.innerHTML =
     '<path d="M4 13v-2m4 6V7m4 13V4m4 13V7m4 6v-2" stroke="#f7f2e8" stroke-width="2.4" stroke-linecap="round"/>';
-  return el('div', { class: 'mark' }, svg);
+  return el('div', { class: 'mark mark--quiet', title: 'Amplify' }, svg);
 }
 
+/**
+ * Editorial opening: letterspaced brand kicker, display title, italic lede.
+ * Optional actions sit opposite on wide screens, below on narrow ones.
+ */
 export function masthead(title, subtitle, ...extra) {
   return el('header', { class: 'masthead' },
-    logoMark(),
-    el('div', { class: 'grow' },
+    el('div', { class: 'masthead__open grow' },
+      el('div', { class: 'masthead__brand' },
+        logoMark(),
+        el('p', { class: 'kicker' }, 'Amplify'),
+      ),
       el('h1', {}, title),
-      subtitle && el('div', { class: 'sub' }, subtitle),
+      subtitle && el('p', { class: 'lede' }, subtitle),
     ),
-    ...extra,
+    extra.length ? el('div', { class: 'masthead__actions' }, ...extra) : null,
   );
 }
 

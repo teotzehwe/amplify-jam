@@ -36,7 +36,7 @@ const openSections = new Set();
 
 function section(id, title, ...children) {
   return el('details', {
-    class: 'card',
+    class: 'folio folio--details',
     open: openSections.has(id),
     onToggle: (e) => (e.target.open ? openSections.add(id) : openSections.delete(id)),
   }, ...children.length ? [el('summary', {}, ...[].concat(title)), ...children] : []);
@@ -67,30 +67,37 @@ function draw() {
 
 /* ------------------------------------------------------------------ shared */
 
-/** Instrument picker: presets as chips, plus a free-text escape hatch. */
+/**
+ * Instrument picker as a typographic checklist — hairline rows, not chip chrome.
+ * Selected rows use olive ink and a mark; the list should read like a craft menu.
+ */
 function instrumentPicker(selected, onChange, inputId = 'add-instrument') {
   const custom = [...selected.keys()].filter((n) => !state.presets.includes(n));
-  const chips = el('div', { class: 'chips' });
+  const list = el('div', { class: 'choices', role: 'group', 'aria-label': 'Instruments' });
 
   for (const name of [...state.presets, ...custom]) {
-    chips.append(
+    const on = selected.has(name);
+    list.append(
       el('button', {
         type: 'button',
-        class: 'chip',
-        'aria-pressed': String(selected.has(name)),
+        class: `choice${on ? ' is-on' : ''}`,
+        'aria-pressed': String(on),
         onClick: () => {
           if (selected.has(name)) selected.delete(name);
           else selected.set(name, 'comfortable');
           onChange();
         },
-      }, name),
+      },
+        el('span', { class: 'choice__tick', 'aria-hidden': 'true' }, on ? '●' : '○'),
+        el('span', { class: 'choice__label' }, name),
+      ),
     );
   }
 
   const input = el('input', {
     id: inputId,
     type: 'text',
-    placeholder: 'Something else? Add it…',
+    placeholder: 'Something else? Write it and press return',
     'aria-label': 'Add an instrument that is not listed',
     maxLength: 40,
     onKeydown: (e) => {
@@ -105,7 +112,7 @@ function instrumentPicker(selected, onChange, inputId = 'add-instrument') {
     },
   });
 
-  return el('div', { class: 'stack' }, chips, input);
+  return el('div', { class: 'stack' }, list, input);
 }
 
 /**
@@ -218,8 +225,8 @@ function pendingMine(you) {
     toast('Request withdrawn');
   });
 
-  return el('section', { class: 'card card--cream' },
-    el('div', { class: 'card__head' },
+  return el('section', { class: 'folio' },
+    el('div', { class: 'folio__rule' },
       el('h2', {}, 'Waiting on the host'),
       el('span', { class: 'hint' }, pluralize(mine.length, 'request')),
     ),
@@ -280,8 +287,8 @@ function suggestSong(you) {
   const mine = state.songs.filter((s) => s.suggestedBy === you.id);
   const gated = state.jam.requireApproval;
 
-  return el('section', { class: 'card card--cream' },
-    el('div', { class: 'card__head' },
+  return el('section', { class: 'folio' },
+    el('div', { class: 'folio__rule' },
       el('h2', {}, 'Suggest a song'),
       el('span', { class: 'hint' }, 'As many as you like'),
     ),
@@ -325,12 +332,11 @@ function signupView() {
   });
 
   return el('div', { class: 'stack stack--lg' },
-    masthead(state.jam.name, 'Sign up for tonight'),
+    masthead(state.jam.name, 'Put your name down for tonight.'),
 
-    el('section', { class: 'card' },
-      el('div', { class: 'card__head' }, el('span', { class: 'step-num' }, '1'), el('h2', {}, 'Who are you?')),
+    el('section', { class: 'folio' },
       el('div', { class: 'field' },
-        el('label', { for: 'name' }, 'Name'),
+        el('label', { for: 'name' }, 'Your name'),
         el('input', {
           id: 'name',
           type: 'text',
@@ -341,22 +347,15 @@ function signupView() {
           onInput: (e) => { draft.name = e.target.value; },
         }),
       ),
-    ),
 
-    el('section', { class: 'card' },
-      el('div', { class: 'card__head' },
-        el('span', { class: 'step-num' }, '2'),
-        el('h2', {}, 'What do you play?'),
-        el('span', { class: 'hint' }, 'Pick as many as you like'),
-      ),
+      el('div', { class: 'folio__rule' }, el('span', { class: 'kicker' }, 'What you play')),
+
+      el('p', { class: 'section-note' }, 'Choose every instrument you might pick up. As many as you like.'),
       instrumentPicker(draft.instruments, redraw),
     ),
 
-    el('p', { class: 'section-note center' },
-      'Next you can sign up for songs — one at a time, as many as you like.'),
-
     el('div', { class: 'sticky-bar' },
-      el('button', { class: 'btn btn--primary btn--lg btn--block', onClick: submit }, 'Join the jam'),
+      el('button', { class: 'btn btn--primary btn--lg btn--block', onClick: submit }, 'Join the night'),
     ),
   );
 }
@@ -387,24 +386,19 @@ function youView(you) {
         )
       : null,
 
-    el('section', { class: 'card you-card' },
-      el('div', { class: 'row row--between' },
+    el('section', { class: 'folio' },
+      el('div', { class: 'row row--between row--wrap' },
         el('div', {},
-          el('h2', {}, you.name),
-          el('div', { class: 'muted small' },
+          el('h2', { class: 'folio__name' }, you.name),
+          el('p', { class: 'folio__instruments' },
             you.instruments.map((i) => i.name).join(' · ')),
         ),
-        el('span', { class: `tag tag--${you.present ? 'in' : 'out'}` }, you.present ? 'Checked in' : 'On a break'),
+        el('span', { class: `tag tag--${you.present ? 'in' : 'out'}` }, you.present ? 'Here' : 'On a break'),
       ),
-      el('div', { class: 'you-stats' },
-        el('div', { class: 'you-stat' }, el('b', {}, you.stats.plays), el('span', {}, 'Turns tonight')),
-        el('div', { class: 'you-stat' },
-          el('b', {}, you.stats.lastRound == null ? '—' : waited),
-          el('span', {}, you.stats.lastRound == null ? 'Not up yet' : 'Songs since'),
-        ),
-        el('div', { class: 'you-stat' }, el('b', {}, state.roundIndex), el('span', {}, 'Songs played')),
-      ),
-      el('hr', { class: 'divider', style: { margin: '16px 0' } }),
+      el('p', { class: 'meta-line' },
+        `${pluralize(you.stats.plays, 'turn')} tonight · ${
+          you.stats.lastRound == null ? 'not up yet' : `${waited} since last`
+        } · ${pluralize(state.roundIndex, 'song')} played`),
       el('label', { class: 'toggle' },
         el('input', {
           type: 'checkbox',
@@ -417,10 +411,10 @@ function youView(you) {
       ),
     ),
 
-    el('section', { class: 'card' },
-      el('div', { class: 'card__head' },
-        el('h2', {}, 'Sign up for songs'),
-        el('span', { class: 'hint' }, 'One song per sign-up'),
+    el('section', { class: 'folio' },
+      el('div', { class: 'folio__rule' },
+        el('span', { class: 'kicker' }, 'Songs'),
+        el('span', { class: 'hint' }, 'One sign-up at a time'),
       ),
       songSignup(you),
     ),

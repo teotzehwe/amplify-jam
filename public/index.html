@@ -27,24 +27,7 @@
       .signup-row { grid-template-columns: 1fr auto; align-items: center; }
     }
 
-    .you-card { background: transparent; }
-    .you-card h2 { font-size: var(--text-lg); font-weight: 500; letter-spacing: -0.015em; }
-    .you-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
-    .you-stat b {
-      display: block;
-      font-size: var(--text-xl);
-      font-weight: 500;
-      letter-spacing: -0.02em;
-      line-height: 1;
-      color: var(--ink-amber);
-    }
-    .you-stat span {
-      display: block;
-      margin-top: 4px;
-      color: var(--muted);
-      font-size: var(--text-sm);
-      line-height: 1.3;
-    }
+    .meta-line { margin: 10px 0 4px; }
 
     .onstage {
       border: 1px solid var(--amber);
@@ -69,7 +52,7 @@
     }
     .onstage p { color: rgba(247, 242, 232, 0.82); }
 
-    details.card > summary {
+    details.folio > summary {
       list-style: none;
       cursor: pointer;
       display: flex;
@@ -77,12 +60,13 @@
       gap: 10px;
       font-weight: 500;
     }
-    details.card > summary::-webkit-details-marker { display: none; }
-    details.card > summary::after { content: "▾"; margin-left: auto; color: var(--faint); }
-    details.card[open] > summary::after { transform: rotate(180deg); }
-    details.card > summary + * { margin-top: 16px; }
+    details.folio > summary::-webkit-details-marker { display: none; }
+    details.folio > summary::after { content: "▾"; margin-left: auto; color: var(--faint); }
+    details.folio[open] > summary::after { transform: rotate(180deg); }
+    details.folio > summary + * { margin-top: 16px; }
 
-    .step-num {
+    /* step wizard retired */
+    .step-num-retired {
       color: var(--faint);
       font-size: var(--text-sm);
       font-weight: 600;

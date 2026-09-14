@@ -6,6 +6,13 @@ dim room and from a TV across that room. Inspired by MONOGRID’s *The Tuscan
 Journey Begins* (Weekend Max Mara): craft and atmosphere, not chrome. Zero
 dependencies, no build step.
 
+**Composition (the anti-vibecode rule).** The palette alone is not enough. The
+layout **must** read as an editorial sheet: letterspaced kickers, thin display
+titles, italic ledes, underline fields, typographic checklists (not chips),
+hairline folios (not nested soft cards), and one primary uppercase olive CTA.
+If a screen still looks like a SaaS onboarding wizard after a recolour, the
+composition is wrong.
+
 
 Rules use **must** (non-negotiable) and **should** (recommended). Every rule is
 anchored to a token, a measured threshold, or an example — never to an adjective.
