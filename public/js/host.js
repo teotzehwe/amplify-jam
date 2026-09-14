@@ -1,8 +1,8 @@
 /* The host console: put a song on deck, pick the band by hand, call it out. */
 
 import {
-  $, api, approvedSongs, confirmButton, coverageFor, el, guard, masthead, pendingSongs,
-  playedSongIds, pluralize, render, signupsFor, subscribe, toast, tokens, upNext,
+  $, api, approvedSongs, busy, confirmButton, coverageFor, el, guard, masthead, pendingSongs,
+  playedSongIds, pluralize, render, shake, signupsFor, subscribe, toast, tokens, upNext,
 } from './common.js';
 import { qrSvg } from './qr.js';
 
@@ -46,13 +46,17 @@ function draw() {
 /* -------------------------------------------------------------------- gate */
 
 function gate() {
-  const submit = guard(async () => {
+  const submit = guard(busy(async () => {
     const key = $('#hostkey').value.trim();
+    if (!key) {
+      shake($('#hostkey')?.closest('.field') || $('#hostkey'));
+      return toast('Paste the host key first', 'error');
+    }
     await api('/host/auth', { method: 'POST', body: { token: key } });
     tokens.host = key;
     authed = true;
     refresh(true);
-  });
+  }));
 
   return el('div', { class: 'gate stack stack--lg' },
     masthead('Amplify', 'Host console'),
@@ -64,7 +68,7 @@ function gate() {
           type: 'text',
           class: 'mono',
           placeholder: 'Paste the key from the terminal',
-          onKeydown: (e) => e.key === 'Enter' && submit(),
+          onKeydown: (e) => e.key === 'Enter' && submit(e),
         }),
       ),
       el('button', { class: 'btn btn--primary btn--block', onClick: submit }, 'Unlock console'),

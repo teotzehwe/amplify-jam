@@ -69,14 +69,58 @@ export async function api(path, { method = 'GET', body } = {}) {
 /* ------------------------------------------------------------------- toast */
 
 let toastTimer;
+let toastLeaveTimer;
 export function toast(message, kind = '') {
   let node = $('.toast');
   if (!node) document.body.append((node = el('div', { class: 'toast' })));
-  node.className = `toast is-shown${kind ? ` toast--${kind}` : ''}`;
-  node.textContent = message;
-  node.setAttribute('role', kind === 'error' ? 'alert' : 'status');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => node.classList.remove('is-shown'), 2600);
+  clearTimeout(toastLeaveTimer);
+  node.className = `toast is-shown${kind ? ` toast--${kind}` : ''}`;
+  node.replaceChildren(
+    el('span', { class: 'toast__msg' }, message),
+    el('span', { class: 'toast__tick', 'aria-hidden': 'true' }),
+  );
+  node.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+  toastTimer = setTimeout(() => {
+    node.classList.add('is-leaving');
+    node.classList.remove('is-shown');
+    toastLeaveTimer = setTimeout(() => {
+      node.classList.remove('is-leaving', 'toast--error', 'toast--success');
+      node.replaceChildren();
+    }, 220);
+  }, 2600);
+}
+
+/** Flash a field (or choices group) with a shake + invalid border. */
+export function shake(target) {
+  if (!target) return;
+  target.classList.remove('is-invalid');
+  // reflow so re-adding restarts the animation
+  void target.offsetWidth;
+  target.classList.add('is-invalid');
+  const clear = () => target.classList.remove('is-invalid');
+  target.addEventListener('animationend', clear, { once: true });
+  setTimeout(clear, 400);
+}
+
+/** Run an async click handler with a busy spinner on the triggering button. */
+export function busy(fn) {
+  return async (event, ...rest) => {
+    const btn = event?.currentTarget instanceof HTMLButtonElement ? event.currentTarget : null;
+    if (btn) {
+      if (btn.classList.contains('is-busy') || btn.disabled) return;
+      btn.classList.add('is-busy');
+      btn.setAttribute('aria-busy', 'true');
+    }
+    try {
+      await fn(event, ...rest);
+    } finally {
+      if (btn) {
+        btn.classList.remove('is-busy');
+        btn.removeAttribute('aria-busy');
+      }
+    }
+  };
 }
 
 /** Wrap an async handler so failures surface as a toast instead of a dead click. */

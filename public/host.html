@@ -11,33 +11,54 @@
   <style>
     .tabs {
       display: flex;
-      gap: 0;
-      padding: 0;
+      gap: 8px;
+      padding: 4px 0 10px;
       background: transparent;
-      border-bottom: 1px solid var(--line);
+      border-bottom: 0;
       border-radius: 0;
       overflow-x: auto;
     }
     .tabs button {
       padding: 10px 14px;
-      border: 0;
-      border-bottom: 2px solid transparent;
-      border-radius: 0;
-      background: transparent;
+      border: 2px solid var(--press-color);
+      border-radius: 14px;
+      background: var(--surface);
       color: var(--muted);
-      font-weight: 500;
+      font-weight: 700;
       font-size: var(--text-sm);
-      letter-spacing: 0.02em;
+      letter-spacing: -0.01em;
       cursor: pointer;
       white-space: nowrap;
-      margin-bottom: -1px;
+      margin-bottom: 3px;
+      box-shadow: 0 3px 0 0 var(--press-color);
+      transition:
+        transform var(--press-ms) var(--ease-press),
+        box-shadow var(--press-ms) var(--ease-press),
+        background var(--press-ms) ease,
+        color var(--press-ms) ease;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
     }
-    .tabs button:hover { color: var(--text); background: transparent; }
+    .tabs button:hover {
+      color: var(--ink);
+      background: var(--surface-2);
+      transform: translateY(-3px);
+      box-shadow: 0 6px 0 0 var(--press-color);
+    }
+    .tabs button:active {
+      transform: translateY(3px);
+      box-shadow: 0 1px 0 0 var(--press-color);
+      transition-duration: 0.05s;
+    }
     .tabs button[aria-selected="true"] {
-      background: transparent;
-      color: var(--ink-amber);
-      border-bottom-color: var(--amber);
-      box-shadow: none;
+      background: var(--amber);
+      color: var(--cream);
+      border-color: var(--press-color);
+      box-shadow: 0 3px 0 0 var(--press-color);
+    }
+    .tabs button[aria-selected="true"]:hover {
+      background: #345c1a;
+      color: var(--cream);
     }
     /* Primary navigation, and 40px by default — under the thumb floor. */
     @media (pointer: coarse) { .tabs button { min-height: 44px; } }
@@ -46,20 +67,24 @@
        horizontal padding on narrow screens fits all four without scrolling —
        primary navigation should not need to be discovered by dragging. */
     @media (max-width: 400px) {
-      .tabs { padding: 3px; gap: 2px; }
+      .tabs { padding: 2px 0 8px; gap: 6px; }
       .tabs button { padding-left: 11px; padding-right: 11px; }
       .tabs .count { margin-left: 4px; }
     }
     /* --muted, not --faint: the tab strip sits on --surface-3, the darkest of
        the paper tones, where --faint measures 4.35:1. It stays quieter than the
        tab label, which is full-strength ink. */
-    .tabs .count { color: var(--muted); font-weight: 500; margin-left: 6px; }
-    /* Cream on olive for alert counts — olive as text on parchment is fine;
-       filled chips use the brand fill pairing. */
+    .tabs .count { color: inherit; opacity: 0.75; font-weight: 600; margin-left: 6px; }
+    .tabs button[aria-selected="true"] .count { opacity: 0.9; }
+    /* Alert counts stay punchy even on inactive tabs. */
     .tabs .count--alert {
       color: var(--ink-amber);
-      font-weight: 700;
+      opacity: 1;
+      font-weight: 800;
       font-size: var(--text-xs);
+    }
+    .tabs button[aria-selected="true"] .count--alert {
+      color: color-mix(in srgb, var(--cream) 85%, #ffe08a);
     }
 
     .roster { display: grid; gap: 0; }
@@ -68,10 +93,17 @@
       display: grid;
       gap: 8px;
       padding: 16px;
-      border-radius: var(--radius);
+      border-radius: 18px;
       background: var(--surface);
-      border: 1px solid var(--line);
-      box-shadow: var(--shadow-soft);
+      border: 2px solid var(--line-strong);
+      box-shadow: 0 4px 0 0 color-mix(in srgb, var(--press-color) 28%, transparent);
+      transition:
+        transform var(--press-ms) var(--ease-press),
+        box-shadow var(--press-ms) var(--ease-press);
+    }
+    .person:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 7px 0 0 color-mix(in srgb, var(--press-color) 35%, transparent);
     }
     .person--away { opacity: 0.5; }
     .person__top { display: flex; align-items: center; gap: 10px; }
@@ -101,10 +133,17 @@
       align-items: center;
       gap: 2px 12px;
       padding: 14px 16px;
-      border-radius: var(--radius);
+      border-radius: 18px;
       background: var(--surface);
-      border: 1px solid var(--line);
-      box-shadow: var(--shadow-soft);
+      border: 2px solid var(--line-strong);
+      box-shadow: 0 4px 0 0 color-mix(in srgb, var(--press-color) 28%, transparent);
+      transition:
+        transform var(--press-ms) var(--ease-press),
+        box-shadow var(--press-ms) var(--ease-press);
+    }
+    .slot:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 7px 0 0 color-mix(in srgb, var(--press-color) 35%, transparent);
     }
     .slot__inst { grid-area: inst; }
     .slot__who { grid-area: who; min-width: 0; }
@@ -146,13 +185,18 @@
       gap: 8px 12px;
       align-items: center;
       padding: 14px 16px;
-      border-radius: var(--radius);
+      border-radius: 16px;
       background: var(--surface);
-      border: 1px solid var(--line);
-      box-shadow: var(--shadow-soft);
-      transition: border-color 0.15s, transform 0.15s;
+      border: 2px solid var(--press-color);
+      box-shadow: 0 4px 0 0 var(--press-color);
+      transition:
+        transform var(--press-ms) var(--ease-press),
+        box-shadow var(--press-ms) var(--ease-press);
     }
-    .pick-row:hover { border-color: var(--line-strong); }
+    .pick-row:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 0 0 var(--press-color);
+    }
     .pick-row--away { opacity: 0.55; }
     @media (min-width: 640px) {
       .pick-row { grid-template-columns: 1fr auto auto; }

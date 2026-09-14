@@ -1,8 +1,8 @@
 /* The musician's phone: sign up, say what you're comfortable with, see when you're up. */
 
 import {
-  $, api, approvedSongs, confirmButton, el, guard, masthead, pendingSongs, pluralize, render,
-  subscribe, toast, tokens,
+  $, api, approvedSongs, busy, confirmButton, el, guard, masthead, pendingSongs, pluralize, render,
+  shake, subscribe, toast, tokens,
 } from './common.js';
 
 const app = $('#app');
@@ -258,8 +258,11 @@ function pendingMine(you) {
  * to play, and the host can still turn suggestions off or remove any of them.
  */
 function suggestSong(you) {
-  const add = guard(async () => {
-    if (!suggestion.title.trim()) return toast('It needs a title at least', 'error');
+  const add = guard(busy(async () => {
+    if (!suggestion.title.trim()) {
+      shake(document.getElementById('suggest-title'));
+      return toast('It needs a title at least', 'error');
+    }
     const res = await api('/songs', {
       method: 'POST',
       body: { title: suggestion.title, artist: suggestion.artist, key: suggestion.key },
@@ -270,7 +273,7 @@ function suggestSong(you) {
     toast(res.status === 'pending' ? 'Sent to the host' : 'Added — sign up for it above');
     draw();
     document.getElementById('suggest-title')?.focus();
-  });
+  }));
 
   const field = (id, key, placeholder, style) => el('input', {
     id,
@@ -313,9 +316,15 @@ function suggestSong(you) {
 function signupView() {
   const redraw = () => draw();
 
-  const submit = guard(async () => {
-    if (!draft.name.trim()) return toast('Add your name first', 'error');
-    if (!draft.instruments.size) return toast('Pick at least one instrument', 'error');
+  const submit = guard(busy(async () => {
+    if (!draft.name.trim()) {
+      shake(document.getElementById('name')?.closest('.field') || document.getElementById('name'));
+      return toast('Add your name first', 'error');
+    }
+    if (!draft.instruments.size) {
+      shake(document.querySelector('.choices'));
+      return toast('Pick at least one instrument', 'error');
+    }
 
     const res = await api('/join', {
       method: 'POST',
@@ -329,7 +338,7 @@ function signupView() {
     tokens.playerId = res.id;
     toast("You're on the list");
     refresh(true);
-  });
+  }));
 
   return el('div', { class: 'stack stack--lg' },
     masthead(state.jam.name, 'Hey! Jump in and tell us who you are.'),
@@ -430,15 +439,18 @@ function youView(you) {
       ),
       el('button', {
         class: 'btn btn--sm',
-        onClick: guard(async () => {
-          if (!instrumentEdit?.size) return toast('Keep at least one instrument', 'error');
+        onClick: guard(busy(async () => {
+          if (!instrumentEdit?.size) {
+            shake(document.querySelector('.choices'));
+            return toast('Keep at least one instrument', 'error');
+          }
           await api(`/players/${you.id}`, {
             method: 'PATCH',
             body: { instruments: [...instrumentEdit].map(([name, level]) => ({ name, level })) },
           });
           instrumentEdit = null;
           toast('Instruments updated');
-        }),
+        })),
       }, 'Save instruments'),
     ),
 

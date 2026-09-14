@@ -153,17 +153,20 @@ Spacing — **4 / 8 / 12 / 16 / 24 / 32 / 48** as `--space-1`…`--space-7`.
 Radius is **two** values, deliberately tight: `--radius: 2px`,
 `--radius-lg: 4px`. No pills, no soft-glass sheets.
 
-Shadows are off by default (`--shadow-soft` / `--shadow: none`). Presence comes
-from type, olive fills, and parchment atmosphere.
+Shadows are off by default for static surfaces. Interactive pressables use a
+Cordy-style offset shadow (`0 Npx 0 0 --press-color`) so controls feel physical.
 
-Motion — intentional, few:
+Motion — Cordy press physics + RationalGo-style micro-feedback:
 
-1. Soft `rise` entrance on `.shell` children
-2. Mark hover scale
-3. Button / chip color transitions and toast slide
+1. Soft `rise` entrance on `.shell` children (staggered)
+2. Mark hover lift + wiggle
+3. Buttons / choices / chips / host tabs: lift on hover, squash on press (~150ms)
+4. Instrument choice `success-pop` when selected
+5. Field focus lift + invalid shake; toast spring-in, tick bar, leave
+6. Async buttons get `.is-busy` spinner; song rows ease in
 
 > **Rule.** `prefers-reduced-motion` **must** collapse durations and disable
-> entrance animation.
+> entrance / press / shake / toast choreography.
 
 ---
 
@@ -171,7 +174,8 @@ Motion — intentional, few:
 
 ### 3.1 Button `.btn`
 
-**Anatomy:** rectangular, 1px olive border, `--text-sm`, tight radius.
+**Anatomy:** chunky 3px olive border, 16px radius, offset bottom shadow,
+`--text-sm`, bold weight. Feels like a physical button (Cordy), not a flat chip.
 
 **Variants:** `--primary` (olive fill, cream text — one per screen), default
 outline olive, `--ghost`, `--danger`, `--quiet`, `--link`, plus sizes.
@@ -180,10 +184,11 @@ outline olive, `--ghost`, `--danger`, `--quiet`, `--link`, plus sizes.
 
 | State | Treatment |
 |---|---|
-| default | transparent / olive border / `--ink-amber` |
-| hover | olive fill, cream text |
-| focus-visible | `outline: 2px solid var(--amber); outline-offset: 2px` |
-| active | slight opacity drop |
+| default | cream / olive border / offset shadow / `--ink-amber` |
+| hover | lift (`translateY` up) + taller shadow; primary darkens fill |
+| focus-visible | `outline: 3px solid var(--amber); outline-offset: 3px` |
+| active | squash down + short shadow (haptic-feeling press) |
+| busy | label hidden, olive spinner via `::after` |
 | disabled | `opacity: 0.4`, `cursor: not-allowed`, **and** the `disabled` attribute |
 
 > **Rule.** A screen **must** have exactly one `--primary`. Secondary actions are
