@@ -525,10 +525,9 @@ function songsTab() {
       body: {
         title,
         artist: $('#s-artist').value.trim(),
-        key: $('#s-key').value.trim(),
       },
     });
-    for (const id of ['#s-title', '#s-artist', '#s-key']) $(id).value = '';
+    for (const id of ['#s-title', '#s-artist']) $(id).value = '';
     $('#s-title').focus();
     toast('Added to the setlist');
   });
@@ -545,8 +544,6 @@ function songsTab() {
           'aria-label': 'Song title', onKeydown: (e) => e.key === 'Enter' && add() }),
         el('input', { id: 's-artist', type: 'text', placeholder: 'Artist', class: 'grow',
           'aria-label': 'Artist', onKeydown: (e) => e.key === 'Enter' && add() }),
-        el('input', { id: 's-key', type: 'text', placeholder: 'Key', style: { maxWidth: '110px' },
-          'aria-label': 'Musical key', onKeydown: (e) => e.key === 'Enter' && add() }),
         el('button', { class: 'btn btn--primary', onClick: add }, 'Add'),
       ),
       el('p', { class: 'section-note' },
