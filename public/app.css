@@ -952,7 +952,7 @@ details.folio--details > summary {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-weight: 500;
+  font-weight: 700;
   font-size: var(--text-lg);
   letter-spacing: -0.015em;
 }
