@@ -99,6 +99,11 @@
   border-top: 1px solid rgba(247, 242, 232, 0.14);
   padding-top: clamp(10px, 1.6vh, 18px);
 }
+.callout__foot .brand-mark {
+  width: 36px;
+  height: 36px;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45));
+}
 
 .callout__close {
   position: fixed;
@@ -119,6 +124,18 @@
   padding: clamp(20px, 4vh, 48px) clamp(20px, 4vw, 56px);
   background: #1B1D21;
   color: var(--cream);
+}
+
+.board__brand {
+  display: flex;
+  justify-content: center;
+}
+@media (min-width: 780px) {
+  .board__brand { justify-content: flex-start; }
+}
+.board__brand .brand-wordmark {
+  height: clamp(44px, 6vw, 64px);
+  max-width: min(360px, 80vw);
 }
 
 .board__head {

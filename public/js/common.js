@@ -306,30 +306,45 @@ export function coverageFor(state, song) {
   return rows;
 }
 
-/** Yellow Amplify mark — never the hero; the jam name is. */
-export function logoMark() {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.innerHTML =
-    '<path d="M4 13v-2m4 6V7m4 13V4m4 13V7m4 6v-2" stroke="#030303" stroke-width="2.4" stroke-linecap="round"/>';
-  return el('div', { class: 'mark mark--quiet', title: 'Amplify' }, svg);
+/** Graffiti “A” mark — compact brand for favicons / tight headers. */
+export function logoMark({ size = 'sm' } = {}) {
+  const src = size === 'lg' ? '/brand/mark-a.png' : '/brand/mark-a-sm.png';
+  return el('img', {
+    class: `brand-mark brand-mark--${size}`,
+    src,
+    alt: 'Amplify',
+    width: size === 'lg' ? 72 : 44,
+    height: size === 'lg' ? 72 : 44,
+    decoding: 'async',
+  });
+}
+
+/** Full Amplify wordmark. `light` for cream pages, `dark` for the stage. */
+export function brandWordmark({ tone = 'light' } = {}) {
+  const src = tone === 'dark'
+    ? '/brand/wordmark-dark-header.png'
+    : '/brand/wordmark-light-header.png';
+  return el('img', {
+    class: `brand-wordmark brand-wordmark--${tone}`,
+    src,
+    alt: 'Amplify Creative Space',
+    decoding: 'async',
+  });
 }
 
 /**
- * Friendly opening: brand mark, bold jam title, plain warm lede.
- * Optional actions sit opposite on wide screens, below on narrow ones.
+ * Friendly opening: real Amplify wordmark, then the jam title.
+ * When the title is just “Amplify” (host gate), the wordmark is the headline.
  */
 export function masthead(title, subtitle, ...extra) {
+  const brandIsTitle = !title || title === 'Amplify';
   return el('header', { class: 'masthead' },
     el('div', { class: 'masthead__open grow' },
-      el('div', { class: 'masthead__brand' },
-        logoMark(),
-        el('p', { class: 'kicker' }, 'Amplify'),
-      ),
-      el('h1', {}, title),
-      subtitle && el('p', { class: 'lede' }, subtitle),
+      el('div', { class: 'masthead__brand' }, brandWordmark({ tone: 'light' })),
+      brandIsTitle
+        ? (subtitle && el('h1', { class: 'masthead__screen' }, subtitle))
+        : el('h1', {}, title),
+      !brandIsTitle && subtitle ? el('p', { class: 'lede' }, subtitle) : null,
     ),
     extra.length ? el('div', { class: 'masthead__actions' }, ...extra) : null,
   );

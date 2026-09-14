@@ -1,6 +1,6 @@
 /* Read-only stage display. Point a TV or a spare laptop at /board. */
 
-import { $, coverageFor, el, pluralize, render, signupsFor, subscribe, upNext } from './common.js';
+import { $, coverageFor, el, pluralize, render, signupsFor, subscribe, upNext, brandWordmark, logoMark } from './common.js';
 import { qrSvg } from './qr.js';
 
 const app = $('#app');
@@ -23,6 +23,9 @@ function board(state) {
   const signupUrl = `${location.origin}/`;
 
   return el('div', { class: 'board' },
+    el('div', { class: 'board__brand' },
+      brandWordmark({ tone: 'dark' }),
+    ),
     el('div', { class: 'board__head' },
       el('div', { class: 'board__qr' },
         qrSvg(signupUrl, { size: 240 }),
@@ -35,6 +38,7 @@ function board(state) {
     mainPanel(state, current, onDeck, next),
 
     el('div', { class: 'callout__foot' },
+      logoMark({ size: 'sm' }),
       el('span', {}, state.jam.name),
       el('span', {}, `${pluralize(state.roundIndex, 'song')} played`),
       el('span', {}, `${pluralize(state.players.filter((p) => p.present).length, 'musician')} here`),
