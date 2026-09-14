@@ -319,7 +319,7 @@ export function logoMark({ size = 'sm' } = {}) {
   });
 }
 
-/** Full Amplify wordmark. `light` for cream pages, `dark` for the stage. */
+/** Full Amplify wordmark. `light` for cream pages, `dark` for ink callouts. */
 export function brandWordmark({ tone = 'light' } = {}) {
   const src = tone === 'dark'
     ? '/brand/wordmark-dark-header.png'

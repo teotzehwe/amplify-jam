@@ -1,5 +1,6 @@
 /* Stage display + host callout — Amplify night.
-   Ink #1B1D21 field, cream type, yellow kickers, purple glow. */
+   Stage board: cream #F4F0E8 field, ink type, purple kickers.
+   Host callout overlay stays ink with cream type + yellow kickers. */
 
 .callout {
   position: fixed;
@@ -122,8 +123,8 @@
   gap: clamp(16px, 3vh, 36px);
   min-height: 100vh;
   padding: clamp(20px, 4vh, 48px) clamp(20px, 4vw, 56px);
-  background: #1B1D21;
-  color: var(--cream);
+  background: var(--cream);
+  color: var(--ink);
 }
 
 .board__brand {
@@ -161,7 +162,7 @@
   border-radius: 16px;
   box-shadow: 0 8px 0 0 #0a0a0a;
 }
-.board__url { color: var(--amber-lift); font-size: clamp(0.7rem, 1vw, 0.95rem); }
+.board__url { color: var(--ink-amber); font-size: clamp(0.7rem, 1vw, 0.95rem); }
 
 .board__titles { display: grid; gap: clamp(12px, 2.2vh, 26px); min-width: 0; }
 
@@ -171,9 +172,9 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 600;
-  color: var(--amber-lift); /* yellow on ink ≥10:1 */
+  color: var(--ink-amber); /* purple on cream ≥7:1 */
 }
-.board__kicker--next { color: var(--orange); } /* orange on ink ≈ 5.9:1 */
+.board__kicker--next { color: var(--ink-burnt); } /* orange-ink on cream */
 
 .board__now {
   font-family: var(--font-display);
@@ -181,7 +182,7 @@
   font-weight: 700;
   line-height: 1.02;
   letter-spacing: -0.02em;
-  color: var(--cream);
+  color: var(--ink);
 }
 
 .board__next {
@@ -189,13 +190,34 @@
   font-size: clamp(1.15rem, 2.6vw, 2.1rem);
   font-weight: 650;
   line-height: 1.1;
-  color: rgba(247, 242, 232, 0.82);
+  color: rgba(27, 29, 33, 0.82);
 }
 
-.board__meta { color: rgba(247, 242, 232, 0.6); font-size: clamp(0.85rem, 1.5vw, 1.25rem); margin-top: 4px; }
+.board__meta { color: var(--muted); font-size: clamp(0.85rem, 1.5vw, 1.25rem); margin-top: 4px; }
 .board__meta--small { font-size: clamp(0.75rem, 1.1vw, 1rem); }
 
 .board .callout__grid { flex: 1; }
+
+.board .callout__row:hover {
+  background: rgba(27, 29, 33, 0.05);
+}
+
+.board .callout__inst {
+  color: var(--ink-amber);
+}
+
+.board .callout__name {
+  color: var(--ink);
+}
+
+.board .callout__foot {
+  color: var(--faint);
+  border-top-color: var(--line);
+}
+
+.board .callout__foot .brand-mark {
+  filter: none;
+}
 
 .board__idle {
   flex: 1;
@@ -204,10 +226,10 @@
   justify-items: center;
   gap: 10px;
   text-align: center;
-  color: rgba(247, 242, 232, 0.62);
+  color: var(--muted);
   font-size: clamp(1rem, 2vw, 1.6rem);
 }
-.board__waiting { color: rgba(247, 242, 232, 0.52); font-size: clamp(0.85rem, 1.4vw, 1.15rem); }
+.board__waiting { color: var(--faint); font-size: clamp(0.85rem, 1.4vw, 1.15rem); }
 
 .board__panel {
   flex: 1;
@@ -227,9 +249,9 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 600;
-  color: var(--amber-lift);
+  color: var(--ink-amber);
 }
-.board__count { color: rgba(247, 242, 232, 0.5); letter-spacing: 0.06em; }
+.board__count { color: var(--faint); letter-spacing: 0.06em; }
 
 .callout__name--list {
   font-size: clamp(1.1rem, 2.6vw, 2.8rem);
@@ -240,14 +262,14 @@
   column-gap: 0.45em;
   row-gap: 0.1em;
 }
-.board__sep { color: rgba(247, 242, 232, 0.38); font-weight: 400; }
+.board__sep { color: rgba(27, 29, 33, 0.35); font-weight: 400; }
 @media (min-width: 900px) {
   .callout__grid--split .callout__name--list { font-size: clamp(1rem, 1.9vw, 1.7rem); }
 }
 
 .board__who { white-space: nowrap; }
 .board__who--away {
-  color: rgba(247, 242, 232, 0.52);
+  color: var(--faint);
   text-decoration: line-through;
   text-decoration-thickness: 1px;
 }

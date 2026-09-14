@@ -24,7 +24,7 @@ function board(state) {
 
   return el('div', { class: 'board' },
     el('div', { class: 'board__brand' },
-      brandWordmark({ tone: 'dark' }),
+      brandWordmark({ tone: 'light' }),
     ),
     el('div', { class: 'board__head' },
       el('div', { class: 'board__qr' },

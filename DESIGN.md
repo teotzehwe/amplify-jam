@@ -27,7 +27,7 @@ anchored to a token, a measured threshold, or an example — never to an adjecti
 | Orange accent | `#FC6B35` | Live / hot moments (not small text on cream) |
 | White | `#FFFFFF` | Surfaces, text on purple |
 
-Press shadows use deep purple `#5A2D66`. Stage night is ink `#1B1D21` with yellow kickers.
+Press shadows use deep purple `#5A2D66`. Stage and phone share cream `#F4F0E8`; host callout overlay stays ink.
 
 ## 1. Context and goals
 
@@ -37,11 +37,12 @@ Three surfaces, one system:
 |---|---|---|---|
 | `/` musician | a phone, held | parchment | Put your name down |
 | `/host` console | a phone or laptop, working | parchment | Pick the band |
-| `/board` stage | a TV, 3–10 m away | `--ink` night | Show who is on the list |
+| `/board` stage | a TV, 3–10 m away | cream | Show who is on the list |
 
-The board inverts because a light screen projected into a dim venue is glare. It
-is the only dark surface, and it sets the confidence the light surfaces aim for:
-large type, high contrast, letterspaced labels, generous scale jumps.
+The board matches the cream brand ground so the room reads as one Amplify night.
+Host fullscreen callouts stay ink for punch when a band is announced. Large type,
+high contrast, letterspaced labels, and generous scale jumps still carry from
+across the room.
 
 **Non-goals.** No framework, no build step, no runtime dependency, no network
 font. The app must start with `node server.js` on a laptop with no internet.
