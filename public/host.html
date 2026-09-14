@@ -253,6 +253,72 @@
       .song-card { grid-template-columns: auto 1fr auto; }
       .song-card--plain { grid-template-columns: 1fr auto; }
     }
+    .song-card--roster {
+      grid-template-columns: 1fr;
+      align-items: stretch;
+      gap: 12px;
+    }
+    .song-card__top {
+      display: grid;
+      gap: 10px;
+    }
+    @media (min-width: 700px) {
+      .song-card__top {
+        grid-template-columns: 1fr auto;
+        align-items: center;
+      }
+    }
+
+    .song-roster {
+      display: grid;
+      gap: 6px;
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      background: var(--surface-2);
+      border: 1px solid transparent;
+    }
+    .song-roster--empty {
+      color: var(--faint);
+      font-size: var(--text-sm);
+      padding: 8px 0 2px;
+      background: transparent;
+    }
+    .song-roster__row {
+      display: grid;
+      grid-template-columns: minmax(72px, 110px) 1fr;
+      gap: 10px;
+      align-items: baseline;
+      animation: row-in 0.32s var(--ease-out) both;
+    }
+    .song-roster__inst {
+      font-family: var(--font-display);
+      font-size: var(--text-xs);
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--ink-amber);
+    }
+    .song-roster__who {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      column-gap: 0.4em;
+      row-gap: 0.15em;
+      font-size: var(--text-sm);
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .song-roster__sep { color: var(--faint); font-weight: 400; }
+    .song-roster__name--away {
+      color: var(--faint);
+      text-decoration: line-through;
+      text-decoration-thickness: 1px;
+      font-weight: 500;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .song-roster__row { animation: none; }
+    }
+
     .queue-move { display: flex; flex-direction: row; gap: 4px; }
     @media (min-width: 700px) { .queue-move { flex-direction: column; } }
     .queue-move .btn { font-size: var(--text-xs); line-height: 1; }

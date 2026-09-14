@@ -211,22 +211,58 @@ function songChoice(song) {
   const signups = signupsFor(state, song.id);
   const here = signups.filter((s) => s.present).length;
 
-  return el('div', { class: 'song-card song-card--plain' },
-    el('div', {},
-      el('div', { class: 'song-card__title' }, song.title),
-      el('div', { class: 'muted small' },
-        [song.artist, song.key && `key of ${song.key}`].filter(Boolean).join(' · ') || '—'),
-      el('div', { class: 'readiness' },
-        signups.length
-          ? el('span', { class: 'tag tag--in' },
-              el('i', { class: 'dot dot--in' }), `${signups.length} signed up`)
-          : el('span', { class: 'tag' }, 'Nobody signed up yet'),
-        signups.length && here < signups.length
-          ? el('span', { class: 'tag tag--maybe' }, `${signups.length - here} on a break`)
-          : null,
+  return el('div', { class: 'song-card song-card--plain song-card--roster' },
+    el('div', { class: 'song-card__top' },
+      el('div', {},
+        el('div', { class: 'song-card__title' }, song.title),
+        el('div', { class: 'muted small' },
+          [song.artist, song.key && `key of ${song.key}`].filter(Boolean).join(' · ') || '—'),
+        el('div', { class: 'readiness' },
+          signups.length
+            ? el('span', { class: 'tag tag--in' },
+                el('i', { class: 'dot dot--in' }), `${signups.length} signed up`)
+            : el('span', { class: 'tag' }, 'Nobody signed up yet'),
+          signups.length && here < signups.length
+            ? el('span', { class: 'tag tag--maybe' }, `${signups.length - here} on a break`)
+            : null,
+        ),
       ),
+      el('button', { class: 'btn btn--primary', onClick: () => putOnDeck(song.id) }, 'Put on deck'),
     ),
-    el('button', { class: 'btn btn--primary', onClick: () => putOnDeck(song.id) }, 'Put on deck'),
+    songRoster(song, signups),
+  );
+}
+
+/** Who put their name down, grouped by instrument — skim before you pick. */
+function songRoster(song, signups) {
+  if (!signups.length) {
+    return el('div', { class: 'song-roster song-roster--empty' },
+      'Nobody on this one yet');
+  }
+
+  const key = (name) => String(name || '').trim().toLowerCase();
+  const rows = coverageFor(state, song).filter((row) => row.got > 0);
+
+  return el('div', { class: 'song-roster', role: 'list', 'aria-label': `Signed up for ${song.title}` },
+    rows.map((row, i) => {
+      const who = signups.filter((s) => key(s.instrument) === key(row.instrument));
+      return el('div', {
+        class: 'song-roster__row',
+        role: 'listitem',
+        style: { animationDelay: `${0.04 + i * 0.04}s` },
+      },
+        el('span', { class: 'song-roster__inst' }, row.instrument),
+        el('span', { class: 'song-roster__who' },
+          who.map((s, j) => [
+            j ? el('span', { class: 'song-roster__sep' }, '·') : null,
+            el('span', {
+              class: `song-roster__name${s.present ? '' : ' song-roster__name--away'}`,
+              title: s.present ? undefined : 'On a break',
+            }, s.name),
+          ]),
+        ),
+      );
+    }),
   );
 }
 
