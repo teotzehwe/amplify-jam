@@ -1,6 +1,5 @@
-/* Stage display + host callout — dark Signal surface.
-   Deep olive night, parchment type, lifted olive kickers.
-   Tuscan editorial stage — same tokens as the light app, inverted. */
+/* Stage display + host callout — Amplify night.
+   Ink #1B1D21 field, cream type, yellow kickers, purple glow. */
 
 .callout {
   position: fixed;
@@ -10,7 +9,7 @@
   flex-direction: column;
   gap: clamp(14px, 2.4vh, 30px);
   padding: clamp(20px, 4vh, 54px) clamp(20px, 4vw, 64px);
-  background: #1a1c12;
+  background: #1B1D21;
   color: var(--cream);
   overflow: auto;
 }
@@ -22,7 +21,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 600;
-  color: var(--amber-lift); /* olive night: raw --amber is ~2:1 */
+  color: var(--amber-lift); /* yellow on ink ≥10:1 */
 }
 
 .callout__song {
@@ -118,7 +117,7 @@
   gap: clamp(16px, 3vh, 36px);
   min-height: 100vh;
   padding: clamp(20px, 4vh, 48px) clamp(20px, 4vw, 56px);
-  background: #1a1c12;
+  background: #1B1D21;
   color: var(--cream);
 }
 
@@ -155,9 +154,9 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 600;
-  color: var(--amber-lift); /* ≥4.5:1 on olive night */
+  color: var(--amber-lift); /* yellow on ink ≥10:1 */
 }
-.board__kicker--next { color: #c4a574; } /* warm earth-lift on olive night ≈ 7:1 */
+.board__kicker--next { color: var(--orange); } /* orange on ink ≈ 5.9:1 */
 
 .board__now {
   font-family: var(--font-display);

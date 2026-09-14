@@ -1,10 +1,12 @@
 /* Amplify — friendly night-out system.
-   Soft cream, warm olive, PP Neue Montreal. Offline-first.
-   Tone closer to Cordy: bold, rounded, conversational — not sleek editorial.
+   Canva brand colours + Cordy press physics. Offline-first.
 
-   Palette rules (measured):
-     - Brand olive is a FILL. On cream, ink-olive text clears 4.5:1.
-     - Olive fills carry cream text (≥7.7:1). Never invert. */
+   Palette (sampled from Amplify Canva files):
+     Cream #F4F0E8 · Ink #1B1D21 · Yellow #FDC323 · Purple #8E499A · Orange #FC6B35 · White #FFF
+   Contrast (measured):
+     - Ink on cream 14.8:1 · White on purple 5.9:1 · Ink on yellow 10.5:1
+     - Yellow is the logomark + primary CTA (ink text). Purple fills selected chips.
+     - Orange is accent only — not small text on cream (2.5:1). */
 
 @font-face {
   font-family: "PP Neue Montreal";
@@ -53,33 +55,40 @@
 :root {
   color-scheme: light;
 
-  /* Brand — friendly olive + warm cream (Cordy-adjacent warmth) */
-  --amber: #3d6b1f;          /* friendlier olive fill — 6.0:1 cream-on-fill */
-  --burnt: #c45c26;          /* warm coral-earth accent for live moments */
-  --amber-lift: #7cb342;     /* lifted green for dark stage */
-  --cream: #fff8ef;          /* warm cream */
-  --sand: #f0e4d4;
-  --ink: #1c1917;            /* soft near-black */
+  /* Amplify Canva brand */
+  --yellow: #FDC323;         /* signature logomark + primary CTA fill */
+  --purple: #8E499A;         /* splatter / selected fills — white text 5.9:1 */
+  --orange: #FC6B35;         /* accent — live moments (not small text on cream) */
+  --white: #FFFFFF;
+  --cream: #F4F0E8;          /* base background */
+  --sand: #E8E2D6;
+  --ink: #1B1D21;            /* body text */
+  --logo-ink: #030303;       /* logomark bars on yellow */
+
+  /* Semantic aliases (keep existing class hooks) */
+  --amber: var(--purple);    /* primary brand fill for chips / active tabs */
+  --burnt: var(--orange);
+  --amber-lift: #FDC323;     /* yellow kickers on dark stage — 10.5:1 on ink */
 
   --success: #2f7a3a;
   --warning: #c47a1a;
   --danger: #c43c3c;
 
-  --ink-amber: #2f5418;      /* olive as text on cream — ≥5.9:1 */
-  --ink-burnt: #9a4418;
+  --ink-amber: #6B3475;      /* purple as text on cream — 7.8:1 */
+  --ink-burnt: #B84A1C;      /* orange as text when needed — prefer large */
   --ink-success: #24602c;
   --ink-warning: #8a5510;
   --ink-danger: #9a2e2e;
 
-  --bg: #fff8ef;
-  --surface: #ffffff;
-  --surface-2: #fff1e2;
-  --surface-3: #f0e4d4;
+  --bg: var(--cream);
+  --surface: var(--white);
+  --surface-2: #EFE9DF;
+  --surface-3: var(--sand);
   --sunken: var(--sand);
 
   --text: var(--ink);
-  --muted: rgba(28, 25, 23, 0.68);
-  --faint: rgba(28, 25, 23, 0.58);
+  --muted: rgba(27, 29, 33, 0.68);
+  --faint: rgba(27, 29, 33, 0.58);
 
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
@@ -97,8 +106,8 @@
   --space-6: 32px;
   --space-7: 48px;
 
-  --line: rgba(61, 107, 31, 0.14);
-  --line-strong: rgba(61, 107, 31, 0.26);
+  --line: rgba(142, 73, 154, 0.16);
+  --line-strong: rgba(142, 73, 154, 0.28);
 
   --radius: 14px;
   --radius-lg: 22px;
@@ -106,13 +115,13 @@
   --press-depth: 5px;
   --press-depth-hover: 10px;
   --press-depth-active: 2px;
-  --press-color: #2a4a14;
+  --press-color: #5A2D66;    /* deep purple for Cordy shadows */
   --press-ms: 0.15s;
   --ease-press: cubic-bezier(0.2, 0.9, 0.3, 1.15);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --shadow-soft: 0 8px 28px rgba(61, 107, 31, 0.08);
-  --shadow: 0 12px 36px rgba(28, 25, 23, 0.10);
-  --ring: 0 0 0 3px rgba(61, 107, 31, 0.28);
+  --shadow-soft: 0 8px 28px rgba(142, 73, 154, 0.10);
+  --shadow: 0 12px 36px rgba(27, 29, 33, 0.10);
+  --ring: 0 0 0 3px rgba(142, 73, 154, 0.30);
 
   --font: "PP Neue Montreal", ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font);
@@ -129,9 +138,9 @@ body {
   line-height: 1.5;
   color: var(--text);
   background:
-    radial-gradient(900px 520px at 0% -10%, rgba(196, 92, 38, 0.10), transparent 55%),
-    radial-gradient(800px 480px at 100% 0%, rgba(61, 107, 31, 0.12), transparent 50%),
-    radial-gradient(700px 400px at 80% 100%, rgba(124, 179, 66, 0.10), transparent 45%),
+    radial-gradient(900px 520px at 0% -10%, rgba(252, 107, 53, 0.12), transparent 55%),
+    radial-gradient(800px 480px at 100% 0%, rgba(142, 73, 154, 0.14), transparent 50%),
+    radial-gradient(700px 400px at 80% 100%, rgba(253, 195, 35, 0.16), transparent 45%),
     var(--bg);
   -webkit-font-smoothing: antialiased;
 }
@@ -146,7 +155,7 @@ h1, h2, h3 {
 p { margin: 0; }
 button, input, select, textarea { font: inherit; color: inherit; }
 
-::selection { background: rgba(70, 80, 22, 0.18); }
+::selection { background: rgba(142, 73, 154, 0.22); }
 :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
 .shell { max-width: 720px; margin: 0 auto; padding: var(--space-7) var(--space-4) 120px; }
@@ -249,14 +258,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
   height: 36px;
   flex: none;
   border-radius: 12px;
-  background: var(--amber);
-  box-shadow: 0 3px 0 0 var(--press-color);
-  border: 2px solid var(--press-color);
+  background: var(--yellow);
+  box-shadow: 0 3px 0 0 var(--logo-ink);
+  border: 2px solid var(--logo-ink);
   transition: transform 0.18s var(--ease-press), box-shadow 0.18s var(--ease-press);
 }
 .mark:hover {
   transform: translateY(-3px) rotate(-6deg);
-  box-shadow: 0 6px 0 0 var(--press-color);
+  box-shadow: 0 6px 0 0 var(--logo-ink);
   animation: wiggle 0.35s var(--ease-press);
 }
 .mark--quiet { width: 32px; height: 32px; border-radius: 10px; }
@@ -457,8 +466,8 @@ select {
   user-select: none;
 }
 .btn:hover {
-  background: var(--amber);
-  color: var(--cream);
+  background: var(--purple);
+  color: var(--white);
   transform: translateY(calc(var(--press-depth) - var(--press-depth-hover)));
   box-shadow: 0 var(--press-depth-hover) 0 0 var(--press-color);
 }
@@ -483,10 +492,11 @@ select {
   border: 2.5px solid currentColor;
   border-right-color: transparent;
   border-radius: 50%;
-  color: var(--cream);
+  color: var(--logo-ink);
   animation: spin 0.7s linear infinite;
 }
 .btn:not(.btn--primary).is-busy::after { color: var(--ink-amber); }
+.btn--primary.is-busy::after { color: var(--logo-ink); }
 .choice:focus-visible {
   outline: 3px solid var(--amber);
   outline-offset: 3px;
@@ -503,22 +513,27 @@ select {
 }
 
 .btn--primary {
-  background: var(--amber);
-  border-color: var(--press-color);
-  color: var(--cream);
+  background: var(--yellow);
+  border-color: var(--logo-ink);
+  color: var(--logo-ink);
   letter-spacing: -0.01em;
   text-transform: none;
   font-size: var(--text-md);
   font-weight: 700;
   padding: 15px 22px;
   border-radius: 16px;
+  box-shadow: 0 var(--press-depth) 0 0 var(--logo-ink);
 }
 .btn--primary:hover {
-  background: #345c1a;
-  border-color: var(--press-color);
-  color: var(--cream);
+  background: #f0b60f;
+  border-color: var(--logo-ink);
+  color: var(--logo-ink);
+  box-shadow: 0 var(--press-depth-hover) 0 0 var(--logo-ink);
 }
-.btn--primary:active { background: #2a4a14; }
+.btn--primary:active {
+  background: #e5ac0c;
+  box-shadow: 0 var(--press-depth-active) 0 0 var(--logo-ink);
+}
 
 .btn--ghost {
   background: var(--surface);
@@ -647,14 +662,14 @@ select {
   transition-duration: 0.05s;
 }
 .choice.is-on {
-  background: var(--amber);
+  background: var(--purple);
   border-color: var(--press-color);
-  color: var(--cream);
+  color: var(--white);
   font-weight: 700;
   animation: success-pop 0.28s var(--ease-press);
 }
 .choice.is-on:hover {
-  background: #345c1a;
+  background: #7a3d85;
 }
 .choice__tick {
   flex: none;
@@ -664,7 +679,7 @@ select {
   opacity: 0.7;
   transform: none;
 }
-.choice.is-on .choice__tick { color: var(--cream); opacity: 1; }
+.choice.is-on .choice__tick { color: var(--white); opacity: 1; }
 .choice__label { min-width: 0; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -703,9 +718,9 @@ select {
   transition-duration: 0.05s;
 }
 .chip[aria-pressed="true"] {
-  background: var(--amber);
+  background: var(--purple);
   border-color: var(--press-color);
-  color: var(--cream);
+  color: var(--white);
   font-weight: 700;
 }
 .chip__x { color: inherit; opacity: 0.7; font-size: var(--text-md); line-height: 1; }

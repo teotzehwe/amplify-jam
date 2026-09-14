@@ -1,7 +1,7 @@
 # Amplify — design system
 
 **Intent:** a friendly night-out interface for open jam nights — warm cream,
-olive green, bold rounded type — easy on a phone in a busy room and clear on a
+Amplify yellow / purple / cream, bold rounded type — easy on a phone in a busy room and clear on a
 TV across that room. Closer in spirit to Cordy’s approachable energy than to
 sleek fashion-editorial craft. Zero dependencies, no build step.
 
@@ -16,6 +16,19 @@ anchored to a token, a measured threshold, or an example — never to an adjecti
 
 ---
 
+## Amplify Canva palette
+
+| Role | Hex | Use |
+|---|---|---|
+| Cream / base | `#F4F0E8` | Page background |
+| Ink / text | `#1B1D21` | Body copy (`#030303` in logo) |
+| Signature yellow | `#FDC323` | Logomark + primary CTA (ink text) |
+| Purple splatter | `#8E499A` | Selected chips, active tabs, brand fill |
+| Orange accent | `#FC6B35` | Live / hot moments (not small text on cream) |
+| White | `#FFFFFF` | Surfaces, text on purple |
+
+Press shadows use deep purple `#5A2D66`. Stage night is ink `#1B1D21` with yellow kickers.
+
 ## 1. Context and goals
 
 Three surfaces, one system:
@@ -24,7 +37,7 @@ Three surfaces, one system:
 |---|---|---|---|
 | `/` musician | a phone, held | parchment | Put your name down |
 | `/host` console | a phone or laptop, working | parchment | Pick the band |
-| `/board` stage | a TV, 3–10 m away | `--ink` olive night | Show who is on the list |
+| `/board` stage | a TV, 3–10 m away | `--ink` night | Show who is on the list |
 
 The board inverts because a light screen projected into a dim venue is glare. It
 is the only dark surface, and it sets the confidence the light surfaces aim for:

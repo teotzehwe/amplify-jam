@@ -69,7 +69,7 @@ function draw() {
 
 /**
  * Instrument picker as a typographic checklist — hairline rows, not chip chrome.
- * Selected rows use olive ink and a mark; the list should read like a craft menu.
+ * Selected rows use purple ink and a mark; the list should read like a craft menu.
  */
 function instrumentPicker(selected, onChange, inputId = 'add-instrument') {
   const custom = [...selected.keys()].filter((n) => !state.presets.includes(n));
