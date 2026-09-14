@@ -1,6 +1,10 @@
 # Amplify — design system
 
-**Intent:** a clean late-night studio interface for a live music night — cool stone paper, electric gold, teal for on-air moments — legible from a phone in a dim room and from a TV across that room. Zero dependencies, no build step.
+**Intent:** a Tuscan editorial craft interface for a live music night — warm
+parchment paper, olive `#465016`, olive-black ink — legible from a phone in a
+dim room and from a TV across that room. Inspired by MONOGRID’s *The Tuscan
+Journey Begins* (Weekend Max Mara): craft and atmosphere, not chrome. Zero
+dependencies, no build step.
 
 
 Rules use **must** (non-negotiable) and **should** (recommended). Every rule is
@@ -14,16 +18,18 @@ Three surfaces, one system:
 
 | Surface | Read from | Ground | Job |
 |---|---|---|---|
-| `/` musician | a phone, held | cool stone | Put your name down |
-| `/host` console | a phone or laptop, working | cool stone | Pick the band |
-| `/board` stage | a TV, 3–10 m away | `--ink` | Show who is on the list |
+| `/` musician | a phone, held | parchment | Put your name down |
+| `/host` console | a phone or laptop, working | parchment | Pick the band |
+| `/board` stage | a TV, 3–10 m away | `--ink` olive night | Show who is on the list |
 
-The board inverts because a white screen projected into a dim venue is glare. It
+The board inverts because a light screen projected into a dim venue is glare. It
 is the only dark surface, and it sets the confidence the light surfaces aim for:
 large type, high contrast, letterspaced labels, generous scale jumps.
 
 **Non-goals.** No framework, no build step, no runtime dependency, no network
 font. The app must start with `node server.js` on a laptop with no internet.
+No WebGL / GSAP storytelling layer — this is a working jam tool wearing Tuscan
+materials, not a brand film.
 
 ---
 
@@ -34,65 +40,70 @@ never raw values.
 
 ### 2.1 Palette
 
-Brand hues — used as **fills only**:
+Brand hues — used as **fills only** (or letterspaced kickers via `--ink-*`):
 
-`--amber #e0a800` (primary, electric gold) · `--burnt #0f766e` (secondary, live
-teal / section grounds) · `--amber-lift #f0c040` (lifted for the dark board)
-· `--cream #f4f6fb` (cool mist) · `--sand #e2e5ec` · `--ink #0b0d12`
+`--amber #465016` (primary olive, Awwwards palette) · `--burnt #5c4033` (warm
+earth for live / on-stage) · `--amber-lift #7a8a3a` (lifted olive for dark
+stage) · `--cream #f7f2e8` (parchment) · `--sand #e6dcc8` · `--ink #1a1c12`
+(olive-black)
 
-Semantic: `--success #16a34a` · `--warning #d97706` · `--danger #dc2626`
+Semantic: `--success #3f6b2d` · `--warning #9a6b2f` · `--danger #8f2f2f`
 
 Text-safe darkenings — for **text on light grounds**. All clear 4.5:1 on
 **both** `--surface` and `--cream`:
 
 | Token | Hex | Role |
 |---|---|---|
-| `--ink-amber` | `#7a5c00` | gold as text |
-| `--ink-burnt` | `#0f766e` | teal as text (also the fill) |
-| `--ink-success` | `#107a37` | success as text |
-| `--ink-warning` | `#a25904` | warning as text |
-| `--ink-danger` | `#b01e1e` | danger as text |
+| `--ink-amber` | `#3a4212` | olive as text |
+| `--ink-burnt` | `#5c4033` | earth as text |
+| `--ink-success` | `#2f5420` | success as text |
+| `--ink-warning` | `#7a5420` | warning as text |
+| `--ink-danger` | `#7a2424` | danger as text |
 
-> **Rule.** Text **must not** use a raw brand hue on a light ground. Amber as
-> text fails 4.5:1 on white. Use the matching `--ink-*` variant.
+> **Rule.** Text **must not** use a raw brand hue on a light ground when that
+> hue fails 4.5:1. Olive fill is dark enough for cream text; olive as body
+> text on parchment **must** use `--ink-amber`.
 >
 > - Do: `color: var(--ink-amber)` on `--surface`
-> - Don't: `color: var(--amber)` on `--surface`
+> - Don't: lighten olive for “soft” labels until contrast slips
 
 > **Rule.** Fills pair one way only, measured:
->
-> | Fill | Text | Ratio |
-> |---|---|---|
-> | `--amber` | `--ink` | 9.04 |
-> | `--burnt` | `#fff` | 5.47 |
-> | `--danger` | `#fff` | 4.83 |
-> | `--success` | `--ink` | ≥5.3 |
->
-> Never invert these. White on amber fails; ink on teal fails.
+
+| Fill | Text | Ratio (approx) |
+|---|---|---|
+| `--amber` | `--cream` | ≥7.7 |
+| `--ink` | `--cream` | ≥12 |
+| `--danger` | `#fff` / cream | ≥4.5 |
+| `--burnt` | `--cream` | ≥5 |
+
+Never invert these. Cream on olive; not olive wash behind olive text.
 
 > **Rule.** Semantic hues carry meaning and **must not** be used decoratively:
 > success = signed up / covered, warning = needs attention, danger =
 > destructive or blocked.
 
+Stage-only accents on olive night: `--amber-lift` for instrument labels;
+warm earth-lift `#c4a574` for “Next” kickers (not teal).
+
 
 ### 2.2 Surfaces
 
-`--bg #eef1f6` · `--surface #ffffff` · `--surface-2 #f5f7fb` · `--surface-3 #e8ebf2`
+`--bg #f7f2e8` · `--surface #fbf7ef` · `--surface-2 #f0e9db` · `--surface-3 #e6dcc8`
 
-Atmosphere (gold + teal blooms + quiet grain) lives on `body` pseudo-elements
-and **must** stay decorative — never the only cue for meaning.
+Atmosphere (soft olive + earth blooms on parchment) lives on `body` and **must**
+stay decorative — never the only cue for meaning.
 
 Two grounds carry meaning:
 
-- **`.card`** (`--surface`) — the working surface. Lists you act on.
-- **`.card--cream`** — a second ground that groups related sections into a band.
+- **`.card`** — section rhythm via hairline rules on parchment (no nested soft
+  cards).
+- **`.card--cream`** — reserved for related bands of content when a second
+  ground is needed; default is transparent + rule.
 
-> **Rule.** `.card--cream` **must** be assigned by meaning, not alternated
-> mechanically. Sections render conditionally, so `:nth-child` striping breaks
-> the moment one is absent.
->
-> - Do: both request-related sections (pending + suggest) share the cream ground
-> - Don't: `.card:nth-of-type(even) { background: cream }`
+> **Rule.** Prefer hairline sectioning over nested cards. If removing a border,
+> shadow, background, or radius does not hurt understanding, it should not be a
+> card.
+
 
 ### 2.3 Type
 
@@ -100,13 +111,13 @@ Scale — **12 / 14 / 16 / 20 / 24 / 32**, plus one display step:
 
 | Token | px | Use |
 |---|---|---|
-| `--text-xs` | 12 | tags, uppercase labels, hints |
+| `--text-xs` | 12 | uppercase labels, hints |
 | `--text-sm` | 14 | buttons, helper text, meta |
 | `--text-md` | 16 | body, inputs |
 | `--text-lg` | 20 | card and row titles |
-| `--text-xl` | 24 | section headings |
-| `--text-2xl` | 32 | stat numbers |
-| `--text-display` | 40 | the masthead headline only |
+| `--text-xl` | 24 | section headings / stats |
+| `--text-2xl` | 32 | large stats |
+| `--text-display` | 44 | masthead / stage display |
 
 > **Rule.** New type **must** land on a step.
 
@@ -117,30 +128,35 @@ Face — one self-hosted family for everything (offline-first):
 --font-display: var(--font)
 ```
 
-Files live in `public/fonts/` as `woff2` (PP Neue Montreal OFL). Hierarchy comes
-from weight, size and modest tracking — not a second family, not a CDN.
+Files live in `public/fonts/` as `woff2`. Hierarchy comes from weight (often
+500), size, and modest tracking — not a second family, not a CDN.
 
 > **Rule.** Do **not** load fonts from the network. Do **not** list Inter,
 > Roboto, or marketing system stacks as the primary face.
->
-> - Do: ship `woff2` under `/fonts` and reference it with `@font-face`
-> - Don't: Google Fonts, Bunny, jsDelivr, or `fonts.cdnfonts.com`
 
-> **Rule.** Tracking stays modest. Uppercase labels ≤ `0.08em`. Display titles
-> around `-0.01em` to `-0.015em`. Wide letterspacing and forced lowercase
-> headlines are out.
+> **Rule.** Editorial kickers (`.kicker`, field labels, board instrument labels)
+> use uppercase with tracking ≤ `0.08em`. Display titles around `-0.02em` to
+> `-0.025em`. Wide letterspacing on body copy is out.
 
 
-### 2.4 Spacing, radius, elevation
+### 2.4 Spacing, radius, elevation, motion
 
-Spacing — **4 / 8 / 12 / 16 / 24 / 32** as `--space-1`…`--space-6`. Same rule:
-land on a step.
+Spacing — **4 / 8 / 12 / 16 / 24 / 32 / 48** as `--space-1`…`--space-7`.
 
-Radius is **two** values, deliberately: `--radius: 8px` for controls,
-`--radius-lg: 12px` for sheets.
+Radius is **two** values, deliberately tight: `--radius: 2px`,
+`--radius-lg: 4px`. No pills, no soft-glass sheets.
 
-Shadows carry cool graphite, not brown paper: `--shadow-soft` for cards,
-`--shadow` for lifted things (toasts).
+Shadows are off by default (`--shadow-soft` / `--shadow: none`). Presence comes
+from type, olive fills, and parchment atmosphere.
+
+Motion — intentional, few:
+
+1. Soft `rise` entrance on `.shell` children
+2. Mark hover scale
+3. Button / chip color transitions and toast slide
+
+> **Rule.** `prefers-reduced-motion` **must** collapse durations and disable
+> entrance animation.
 
 ---
 
@@ -148,24 +164,23 @@ Shadows carry cool graphite, not brown paper: `--shadow-soft` for cards,
 
 ### 3.1 Button `.btn`
 
-**Anatomy:** pill, 1px border, `--text-sm`, `--radius: 999px`.
+**Anatomy:** rectangular, 1px olive border, `--text-sm`, tight radius.
 
-**Variants:** `--primary` (amber fill, ink text — one per screen),
-`--ghost`, `--danger`, `--quiet` (destructive, de-emphasised), `--link`,
-plus sizes `--lg`, `--sm`, `--icon`, `--block`.
+**Variants:** `--primary` (olive fill, cream text — one per screen), default
+outline olive, `--ghost`, `--danger`, `--quiet`, `--link`, plus sizes.
 
 **States — all required:**
 
 | State | Treatment |
 |---|---|
-| default | `--surface` / token border |
-| hover | inverts to `--ink` on `#fff` |
+| default | transparent / olive border / `--ink-amber` |
+| hover | olive fill, cream text |
 | focus-visible | `outline: 2px solid var(--amber); outline-offset: 2px` |
-| active | `transform: translateY(1px)` |
+| active | slight opacity drop |
 | disabled | `opacity: 0.4`, `cursor: not-allowed`, **and** the `disabled` attribute |
 
 > **Rule.** A screen **must** have exactly one `--primary`. Secondary actions are
-> `--ghost` or `--quiet`.
+> outline / `--ghost` / `--quiet`.
 
 > **Rule.** Destructive actions **must** use `--danger` or `--quiet` and **must**
 > be spatially separated from the primary action.
@@ -173,71 +188,29 @@ plus sizes `--lg`, `--sm`, `--icon`, `--block`.
 ### 3.2 Touch targets
 
 > **Rule.** Every interactive element **must** be ≥44px tall under
-> `@media (pointer: coarse)`. Enforced by element type, not by component name:
->
-> ```css
-> @media (pointer: coarse) {
->   select, input, .toggle { min-height: 44px; }
->   .btn--sm { min-height: 44px; … }
->   .btn--icon { width: 44px; height: 44px; }
->   .btn--link { min-height: 44px; }
->   .tabs button { min-height: 44px; }
-> }
-> ```
->
-> Covering element types is what makes the floor survive a restyle — a local
-> `padding` override on a `select` silently took it to 39px once already.
-
-Compact sizes are permitted under a fine pointer. `.chip` is 44px at all widths
-because it is the first control every musician touches.
+> `@media (pointer: coarse)`. Enforced by element type, not by component name.
 
 ### 3.3 Card `.card`
 
-`--space-5` padding, `--radius-lg`, `--shadow-soft`, 1px `--line`.
-`.card__head` holds an `h2` at `--text-lg` with a right-aligned `.hint` that drops
-to its own line below 520px.
+Hairline bottom rule, no fill by default. `.card__head` holds an `h2` at
+`--text-lg` weight 500 with a right-aligned `.hint`.
 
 ### 3.4 Tabs (host console)
 
-Full ARIA tabs, not buttons wearing tab roles.
-
-> **Rule.** If `role="tab"` is present, the pattern **must** be complete:
-> roving `tabindex` (one stop for the strip), `aria-controls` → a real
-> `role="tabpanel"`, `aria-labelledby` back, and Arrow/Home/End with focus
-> following selection.
->
-> Announcing tabs without arrow-key support is worse than plain buttons: it
-> promises a keyboard model that then fails.
-
-Below 400px, horizontal padding tightens so all four fit without scrolling —
-primary navigation must not require dragging to discover.
+Full ARIA tabs. Selected tab uses `--ink-amber` text and an olive underline.
 
 ### 3.5 Sign-up row `.signup-row`
 
-Confirmed state uses a warm fill, a `--ink-success` inset edge and an accent title.
-
-> **Rule.** A confirmed state **must not** read as disabled. The original
-> blue-grey wash on cool stone looked greyed-out — the wrong feeling for
-> "you're on for this one".
+Confirmed state keeps title weight and success ink — **must not** read as disabled.
 
 ### 3.6 Board rows `.callout__row`
 
-Instrument label in `--amber-lift`, letterspaced uppercase, fixed min-width. Names in
-`--cream` at `clamp()` sizes so they scale with the screen rather than a
-breakpoint.
-
-Away musicians: `line-through` **and** reduced opacity.
-
-> **Rule.** State **must not** be carried by colour alone. The strike-through is
-> what conveys "on a break"; the dimming is reinforcement.
+Instrument label in `--amber-lift`, letterspaced uppercase. Names in `--cream`
+at `clamp()` sizes. Away musicians: `line-through` **and** reduced opacity.
 
 ### 3.7 Empty states
 
-Every list **must** have one, and it **must** say what will fill it — a jam
-starts empty, so this is a normal state, not an error. Solid border, not dashed.
-
-- Do: *"Nobody yet — scan the code and add your name"*
-- Don't: a blank panel, or a dashed box that reads as a validation failure
+Every list **must** have one that says what will fill it.
 
 ---
 
@@ -265,9 +238,7 @@ Paste into the console on each screen, at 375px and at desktop:
   const L = ([r,g,b]) => 0.2126*lin(r)+0.7152*lin(g)+0.0722*lin(b);
   const parse = s => (s.match(/[\d.]+/g)||[]).map(Number);
   const ratio = (f,b) => { const a=L(f),c=L(b); const hi=Math.max(a,c),lo=Math.min(a,c); return (hi+0.05)/(lo+0.05); };
-  const bgOf = n => { for (let e=n; e; e=e.parentElement) { const c=parse(getComputedStyle(e).backgroundColor); if (c.length>=3 && (c[3]===undefined||c[3]>0.9)) return c.slice(0,3); } return [255,255,255]; };
-  // Blending the text colour's own alpha matters: skip it and every rgba()
-  // colour reports as fully opaque, hiding real failures on the board.
+  const bgOf = n => { for (let e=n; e; e=e.parentElement) { const c=parse(getComputedStyle(e).backgroundColor); if (c.length>=3 && (c[3]===undefined||c[3]>0.9)) return c.slice(0,3); } return [247,242,232]; };
   const flat = (col,bg) => { const a = col[3]===undefined?1:col[3]; return col.slice(0,3).map((v,i)=>Math.round(v*a+bg[i]*(1-a))); };
   const fails = [];
   for (const n of document.querySelectorAll('body *')) {
@@ -292,9 +263,7 @@ Paste into the console on each screen, at 375px and at desktop:
 ```
 
 > **Rule.** Any change to a surface, a text colour or a font size **must** be
-> re-measured. `--faint` passed at 4.59:1 on white and slipped to 4.46:1 the
-> moment sections gained a cream ground — a restyle silently broke a token that
-> had been correct.
+> re-measured.
 
 ---
 
@@ -310,54 +279,36 @@ Never blame the reader.
 | "Withdrew from this song — take them off before you call it" | "Invalid lineup state" |
 | "Nobody yet. Pick from the sign-ups below — tap a name to put them on." | "No data" |
 
-> **Rule.** Labels **must** be unambiguous even when short. "Turns tonight" and
-> "Songs played" are kept at full length and given a uniform two-line box rather
-> than shortened to "Turns" and "Songs", which would blur whose count is whose.
-
-> **Rule.** Error text **must** state the cause and the recovery.
-> *"Mei Lin did not sign up for this song"* — not *"Forbidden"*.
-
 ---
 
 ## 6. Anti-patterns
 
 Prohibited outright:
 
-- **Emoji as structural icons.** Font-dependent, untintable, inconsistent across
-  platforms. (Emoji in `<link rel="icon">` data-URIs is fine — that is a favicon,
-  not UI.)
-- **Raw hex or rem in components.** Use tokens.
-- **Text in a raw brand hue on a light ground.** See §2.1.
+- **Emoji as structural icons.**
+- **Raw hex or rem in components.** Use tokens (stage `clamp()` and measured
+  alpha blends on the board are the known exceptions).
+- **Text in a raw brand hue on a light ground** when it fails contrast.
 - **Placeholder as the only label.**
 - **`outline: none`** without an equally visible replacement.
-- **A webfont from a CDN.** Breaks the offline-first requirement. Self-hosting a
-  file is the only acceptable route.
-- **`role="tab"` without the keyboard model.** See §3.4.
+- **A webfont from a CDN.**
+- **`role="tab"` without the keyboard model.**
 - **Colour as the only carrier of state.**
-- **Auto-staffing the band.** Out of scope for design, but the rule the product
-  exists to keep: see `HANDOFF.md`.
+- **Auto-staffing the band.**
+- **AI-slop chrome:** purple gradients, cream+terracotta cliché overload, glass
+  morphism, mesh noise, pill clusters, nested soft cards, gold glow.
 
 ---
 
 ## 7. Migration notes
 
-Existing UI predating this system:
-
-1. **Off-scale sizes** — all converted; `body { font-size: 16px }` is the only
-   raw value left, and it is the root definition.
-2. **Aileron is gone.** It was referenced in `--font` with no `@font-face` and
-   no font file, so it never resolved on any machine. Dropped when the stack was
-   matched to Trackr. `--font-display` no longer names a condensed face either.
-3. **`board.css` uses `clamp()` rather than the scale.** Intentional: the stage
-   display scales with viewport, not breakpoints. Keep it that way.
-4. **Signal's palette is adopted in full; Chakra Petch is not.** The face
-   needs a network font or a vendored binary, both of which conflict with
-   offline-first, so the Trackr system stack stands in. If Chakra Petch is
-   ever wanted, self-host a `woff2` and set `--font-display` — do not add a CDN.
-5. **The amplifyforyouth.cc palette is gone.** Retired tokens: `--coral`,
-   `--orange`, `--honey`, `--lavender`, `--dusty-blue`, `--near-black`,
-   `--ink-coral`, `--ink-blue`, `--ink-plum`, `--ink-honey`. Anything still
-   referencing them is dead code.
+1. **Signal (cool stone / electric gold / teal) is retired.** Olive + parchment
+   replaces it. Retired Signal fills: electric gold `#c4a000` / `#e0a800`, live
+   teal `#0f766e`, cool mist grounds, board teal-lift `#5eead4`.
+2. **PP Neue Montreal remains.** Self-hosted `woff2` under `/fonts`.
+3. **`board.css` uses `clamp()` rather than the scale.** Intentional for TV.
+4. **Cards are hairlines, not sheets.** Matches the de-slop pass; Tuscan adds
+   olive and parchment without bringing chrome back.
 
 ---
 
@@ -365,15 +316,15 @@ Existing UI predating this system:
 
 Run in code review:
 
-- [ ] No raw hex or raw rem in the diff; tokens only
+- [ ] No raw hex or raw rem in the diff; tokens only (board exceptions OK)
 - [ ] Any new font-size lands on a `--text-*` step; any new gap on a `--space-*` step
-- [ ] Sweep (§4) returns `contrast: OK` on all three screens, light and dark grounds
+- [ ] Sweep (§4) returns `contrast: OK` on all three screens
 - [ ] Sweep at 375px returns `targets: OK` and `hScroll: false`
-- [ ] New interactive element: default / hover / focus-visible / active / disabled all defined
-- [ ] Icon-only control has an `aria-label` naming its object
+- [ ] New interactive element: default / hover / focus-visible / active / disabled
+- [ ] Icon-only control has an `aria-label`
 - [ ] New input has a `<label for>` or an `aria-label`
 - [ ] One `--primary` per screen; destructive action visually separated
-- [ ] New list has an empty state saying what will fill it
+- [ ] New list has an empty state
 - [ ] State is not carried by colour alone
 - [ ] Checked at 375px **and** ≥1280px; board checked at 1920×1080
 - [ ] `npm test` passes
