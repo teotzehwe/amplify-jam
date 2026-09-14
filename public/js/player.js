@@ -405,7 +405,7 @@ function youView(you) {
         el('span', { class: `tag tag--${you.present ? 'in' : 'out'}` }, you.present ? 'Here' : 'On a break'),
       ),
       el('p', { class: 'meta-line' },
-        you.stats.lastRound == null ? 'not up yet' : `${waited} since last`),
+        you.stats.lastRound == null ? 'Not up yet' : `${waited} since last`),
       el('label', { class: 'toggle' },
         el('input', {
           type: 'checkbox',
