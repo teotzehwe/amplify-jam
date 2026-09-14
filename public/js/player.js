@@ -18,7 +18,7 @@ const draft = {
  * Held outside the render so a live update from anyone else in the room
  * cannot wipe a half-typed suggestion.
  */
-const suggestion = { title: '', artist: '', key: '' };
+const suggestion = { title: '', artist: '' };
 
 let state = null;
 /** Instruments are edited in a scratch copy so a live refresh cannot clobber typing. */
@@ -273,7 +273,6 @@ function suggestSong(you) {
     });
     suggestion.title = '';
     suggestion.artist = '';
-    suggestion.key = '';
     toast(res.status === 'pending' ? 'Sent to the host' : 'Added — sign up for it above');
     draw();
     document.getElementById('suggest-title')?.focus();
