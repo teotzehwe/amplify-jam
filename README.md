@@ -21,7 +21,7 @@ node server.js
 No install step, no dependencies, no internet. Node 18 or newer.
 
 ```
-♪  Amplify — Open Jam Night
+♪  Amplify Open Jam
 
    Players sign up   http://192.168.1.24:3000/
    Host console      http://192.168.1.24:3000/host?k=6f2a…

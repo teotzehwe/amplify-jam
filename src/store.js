@@ -29,7 +29,7 @@ export function newId(prefix = '') {
 function defaultState(hostKey) {
   return {
     jam: {
-      name: 'Open Jam Night',
+      name: 'Amplify Open Jam',
       createdAt: Date.now(),
       allowSuggestions: true,
       // Requests wait for the host before anyone can sign up for them. On by
