@@ -4,14 +4,14 @@
   "installCommand": null,
   "buildCommand": null,
   "outputDirectory": "public",
-  "rewrites": [
-    { "source": "/host", "destination": "/host.html" },
-    { "source": "/board", "destination": "/board.html" }
-  ],
-  "headers": [
+  "routes": [
     {
-      "source": "/api/(.*)",
-      "headers": [{ "key": "cache-control", "value": "no-store" }]
-    }
+      "src": "^/api/(.*)$",
+      "headers": { "cache-control": "no-store" },
+      "dest": "/api/[...path]?path=$1"
+    },
+    { "src": "^/host$", "dest": "/host.html" },
+    { "src": "^/board$", "dest": "/board.html" },
+    { "handle": "filesystem" }
   ]
 }
