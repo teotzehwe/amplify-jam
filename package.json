@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "A sign-up queue for open jam nights. The room puts its names down; the host picks the band.",
   "type": "module",
-  "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "test": "node --test \"test/*.test.js\""

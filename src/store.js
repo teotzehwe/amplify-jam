@@ -138,9 +138,21 @@ class FileBackend {
   async save(state) {
     this.state = state;
     this.version += 1;
-    const tmp = `${this.file}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(state, null, 2));
-    renameSync(tmp, this.file);
+    try {
+      mkdirSync(dirname(this.file), { recursive: true });
+      const tmp = `${this.file}.${process.pid}.tmp`;
+      writeFileSync(tmp, JSON.stringify(state, null, 2));
+      renameSync(tmp, this.file);
+    } catch (err) {
+      if (['ENOENT', 'EROFS', 'EACCES', 'EPERM'].includes(err.code) || process.env.VERCEL) {
+        const e = new Error(
+          'Cannot save jam state on this host. Add Upstash Redis (KV_REST_API_URL / KV_REST_API_TOKEN) and redeploy.',
+        );
+        e.status = 503;
+        throw e;
+      }
+      throw err;
+    }
     return true;
   }
 

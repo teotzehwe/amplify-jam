@@ -582,6 +582,15 @@ export async function handleRequest(req, res) {
   }
 
   if (path.startsWith('/api/')) {
+    // On Vercel the file backend cannot persist (read-only /var/task). Without a
+    // Redis/KV store, every instance invents its own night and writes 500. Say
+    // so before a join looks like a broken form.
+    if (process.env.VERCEL && store.realtime === 'sse') {
+      return send(res, 503, {
+        error: 'No key-value store configured. In Vercel → Storage, add Upstash Redis (sets KV_REST_API_URL and KV_REST_API_TOKEN), set HOST_KEY, then redeploy.',
+      });
+    }
+
     const match = routes.find((r) => r.method === req.method && r.pattern.test(path));
     if (!match) return send(res, 404, { error: 'Unknown endpoint' });
 
