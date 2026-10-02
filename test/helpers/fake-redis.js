@@ -25,7 +25,9 @@ export function startFakeRedis() {
     if (delayNextWrite) await new Promise((r) => setTimeout(r, delayNextWrite));
 
     let result = null;
-    if (cmd === 'GET') {
+    if (cmd === 'PING') {
+      result = 'PONG';
+    } else if (cmd === 'GET') {
       result = data.has(rest[0]) ? data.get(rest[0]) : null;
     } else if (cmd === 'MGET') {
       // Atomic in real Redis, so it is atomic here: one snapshot, both keys.

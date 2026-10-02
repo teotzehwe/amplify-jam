@@ -159,6 +159,11 @@ class FileBackend {
   get realtime() {
     return 'sse';
   }
+
+  /** File store is local to the process — nothing remote to probe. */
+  async ping() {
+    return true;
+  }
 }
 
 /* -------------------------------------------------------------- kv backend */
@@ -221,6 +226,12 @@ class KvBackend {
   get realtime() {
     return 'poll'; // serverless functions cannot hold an event stream open
   }
+
+  /** Cheap liveness check so /api/health can tell Redis is answering. */
+  async ping() {
+    const pong = await this.command('PING');
+    return pong === 'PONG' || pong === true || pong === 'pong';
+  }
 }
 
 /* -------------------------------------------------------------------- store */
@@ -243,6 +254,11 @@ export class Store {
 
   get realtime() {
     return this.backend.realtime;
+  }
+
+  /** Probe the backing store (Redis PING, or always-true for the file store). */
+  ping() {
+    return this.backend.ping();
   }
 
   current() {
