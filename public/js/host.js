@@ -180,11 +180,11 @@ function nowTab() {
 const songById = (id) => state.songs.find((s) => s.id === id) || null;
 const playerById = (id) => state.players.find((p) => p.id === id) || null;
 
-const putOnDeck = (songId) => guard(async () => {
+const putOnDeck = (songId) => guard(busy(async () => {
   await api('/host/lineup', { method: 'POST', body: { songId } });
   tab = 'now';
   await refresh(true);
-})();
+}, 'host-deck'))();
 
 /** Song picker, with a live read on how many people have put their name down. */
 function songChooser() {
@@ -337,14 +337,14 @@ function callSheet(current) {
   const seated = new Map(current.picks.map((p) => [p.playerId, p.instrument]));
   const bench = candidates.filter((c) => !seated.has(c.playerId));
 
-  const pick = guard(async (playerId, instrument) => {
+  const pick = guard(busy(async (playerId, instrument) => {
     await api('/host/pick', { method: 'POST', body: { playerId, instrument } });
     await refresh(true);
-  });
-  const unpick = guard(async (playerId) => {
+  }, 'host-pick'));
+  const unpick = guard(busy(async (playerId) => {
     await api('/host/unpick', { method: 'POST', body: { playerId } });
     await refresh(true);
-  });
+  }, 'host-unpick'));
 
   return el('div', { class: 'stack' },
     el('section', { class: 'card stack' },
@@ -380,7 +380,10 @@ function callSheet(current) {
         }, 'Played ✓'),
         el('button', {
           class: 'btn btn--ghost btn--lg',
-          onClick: guard(() => api('/host/skip', { method: 'POST' })),
+          onClick: guard(busy(async () => {
+            await api('/host/skip', { method: 'POST' });
+            await refresh(true);
+          }, 'host-skip')),
         }, 'Cancel'),
       ),
       el('p', { class: 'section-note' },
@@ -656,8 +659,11 @@ function requests() {
     await refresh(true);
   }, 'host-approve'));
 
-  const decline = (song) => api(`/songs/${song.id}`, { method: 'DELETE' })
-    .then(() => toast('Declined'));
+  const decline = guard(busy(async (song) => {
+    await api(`/songs/${song.id}`, { method: 'DELETE' });
+    toast('Declined');
+    await refresh(true);
+  }, 'host-decline'));
 
   return el('section', { class: 'card stack card--alert' },
     el('div', { class: 'card__head' },
@@ -693,13 +699,14 @@ function requests() {
 }
 
 /** Rewrite the whole queue order from a moved song. */
-const reorder = (songId, toIndex) => guard(() => {
+const reorder = (songId, toIndex) => guard(busy(async () => {
   const ids = approvedSongs(state).map((s) => s.id).filter((id) => id !== songId);
   ids.splice(Math.max(0, Math.min(ids.length, toIndex)), 0, songId);
   // Pending songs are not in the queue, so they are appended untouched — the
   // server keeps anything the client left out, in its existing order.
-  return api('/host/songs/order', { method: 'POST', body: { order: ids } });
-})();
+  await api('/host/songs/order', { method: 'POST', body: { order: ids } });
+  await refresh(true);
+}, 'host-reorder'))();
 
 function songAdminCard(song, index) {
   const queue = approvedSongs(state);
