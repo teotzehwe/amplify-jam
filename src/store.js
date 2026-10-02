@@ -314,7 +314,8 @@ export class Store {
    * player tokens are stripped so one phone cannot impersonate another.
    */
   publicState() {
-    const { hostToken, ...rest } = this.state;
+    // lastHostExportAt is a server-side gate for clearing the night — not for phones.
+    const { hostToken, lastHostExportAt, ...rest } = this.state;
     return {
       ...rest,
       version: this.version,

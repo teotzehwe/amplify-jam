@@ -72,6 +72,11 @@ async function call(path, { method = 'GET', body, host = false, player } = {}) {
   return { status: res.status, data: await res.json().catch(() => ({})) };
 }
 
+async function clearNight() {
+  await call('/host/export', { host: true });
+  return call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
+}
+
 /* -------------------------------------------------------------------- tests */
 
 test('the night is stored in the key-value store, not on disk', async () => {
@@ -104,7 +109,7 @@ test('the version advances on every write', async () => {
 });
 
 test('simultaneous sign-ups all survive — none is silently lost', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
+  await clearNight();
 
   // Fire them together so they race on the same compare-and-set.
   const names = ['Ana', 'Bo', 'Cy', 'Di', 'Eli', 'Fay', 'Gus', 'Hana'];
@@ -122,7 +127,7 @@ test('simultaneous sign-ups all survive — none is silently lost', async () => 
 });
 
 test('a slow write does not drop a concurrent one', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
+  await clearNight();
   redis.setWriteDelay(60);
 
   const [a, b] = await Promise.all([
@@ -150,7 +155,7 @@ test('the host key still never leaves the server', async () => {
 });
 
 test('a full round trip works against the key-value store', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
+  await clearNight();
   const song = await call('/songs', { method: 'POST', body: { title: 'Remote Song' }, host: true });
   const drummer = await call('/join', {
     method: 'POST',

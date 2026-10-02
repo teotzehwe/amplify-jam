@@ -514,14 +514,24 @@ route('POST', /^\/api\/host\/skip$/, (ctx) => {
   return { ok: true };
 });
 
+/** How recently the host must have exported before a night wipe is allowed. */
+const BACKUP_MAX_AGE_MS = 15 * 60 * 1000;
+
 route('POST', /^\/api\/host\/reset$/, (ctx) => {
   requireHost(ctx);
   const mode = oneOf(ctx.body.mode, ['turns', 'night'], 'turns');
-  // Clearing the night is irreversible and there is no Redis undo. The host
-  // console downloads a backup first and sends confirmBackup so a stray tap
-  // cannot wipe a room without that step.
-  if (mode === 'night' && ctx.body.confirmBackup !== true) {
-    throw bad('Download a backup first, then clear the night');
+  // Clearing the night is irreversible and there is no Redis undo. The UI
+  // downloads a backup first; the API also requires a recent /host/export so a
+  // raw curl with confirmBackup:true cannot wipe a busy room.
+  if (mode === 'night') {
+    if (ctx.body.confirmBackup !== true) {
+      throw bad('Download a backup first, then clear the night');
+    }
+    const hasAnything = store.state.players.length > 0 || store.state.songs.length > 0;
+    const exportedAt = store.state.lastHostExportAt || 0;
+    if (hasAnything && Date.now() - exportedAt > BACKUP_MAX_AGE_MS) {
+      throw bad('Download a backup first, then clear the night');
+    }
   }
   store.update((state) => {
     state.current = null;
@@ -531,6 +541,7 @@ route('POST', /^\/api\/host\/reset$/, (ctx) => {
     if (mode === 'night') {
       state.players = [];
       state.songs = [];
+      delete state.lastHostExportAt;
     }
   });
   return { ok: true };
@@ -542,10 +553,15 @@ route('POST', /^\/api\/host\/reset$/, (ctx) => {
  */
 route('GET', /^\/api\/host\/export$/, (ctx) => {
   requireHost(ctx);
+  const exportedAt = Date.now();
+  store.update((state) => {
+    state.lastHostExportAt = exportedAt;
+  });
   const snap = structuredClone(store.state);
+  delete snap.lastHostExportAt;
   return {
     format: 'amplify-night-v1',
-    exportedAt: Date.now(),
+    exportedAt,
     version: store.version,
     night: snap,
   };
