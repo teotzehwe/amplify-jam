@@ -8,19 +8,32 @@ what is deliberately unfinished, and what not to break.
 
 ## Where things are
 
-- **Repo:** `teotzehwe/amplify`
-- **Branch:** `claude/jam-signup-queue-ocvyrw` — all work is here, not on the
-  default branch. There is no open PR.
+- **Canonical product URL:** `https://amplify-jam.vercel.app`
+- **GitHub (legacy mirror, if used):** `teotzehwe/amplify-jam`
+- **Vercel project:** `amplify-jam` (not the old temporary claim projects)
+- **Default branch:** `main`
 
 ```bash
-git clone https://github.com/teotzehwe/amplify
-cd amplify && node server.js     # no install step, no dependencies
-npm test                          # 69 tests
+node server.js     # no install step, no dependencies
+npm test           # 70+ tests
 ```
 
 Read the commit messages before the code. They carry the reasoning for every
 non-obvious decision, including two concurrency bugs and why the QR encoder is
 hand-written.
+
+### Production deploy checklist
+
+Before a night, confirm all of these on the **amplify-jam** Vercel project:
+
+1. **Upstash Redis** linked — `KV_REST_API_URL` + `KV_REST_API_TOKEN` set for Production
+2. **`HOST_KEY`** set to a secret you chose (not empty — hosted deploys never print one)
+3. **`vercel.json` routes** still send `^/api/(.*)$` → `/api/[...path]?path=$1` (without this, `/api/host/auth` 404s)
+4. **Deployment Protection / Vercel Authentication off** for the public jam URL (or musicians hit SSO)
+5. Smoke: `GET /api/health` → `hasKv: true`, `hasHostKey: true`; `GET /api/state` → `realtime: "poll"`; host unlock with your key
+6. Prefer the apex `amplify-jam.vercel.app` over `*-teotzehwe-3831s-projects.vercel.app` aliases
+
+Laptop hot spare: keep a folder with this repo + `node` on a USB. If Vercel dies, `node server.js` on venue wifi still runs the night from `data/jam.json`.
 
 ---
 
@@ -198,9 +211,13 @@ token twice.
 - **Turn counts reset each night.** No season-long fairness.
 - **A declined request is gone, with no note to whoever asked.** They see it
   disappear from their pending list. A one-line reason would be kinder.
-- **The Vercel deployment has not been run in production yet.** The hosted path
-  is tested against a stand-in speaking the real Upstash REST protocol, and
-  driven end-to-end in a browser, but nobody has yet pointed it at a live Redis.
+- **Hosted path is live** on Upstash Redis (`realtime: "poll"`). Still keep a
+  laptop spare: Redis/region outages and bad deploys have already broken nights.
+- **Backup the night before destructive actions.** Export from the host console
+  (when that feature is merged) or copy the Redis `amplify:state` value. There
+  is no automatic undo for “Clear the night”.
+- **Rotate secrets that were pasted into chat** (Redis tokens, host keys, GitHub
+  PATs). Treat chat as public.
 
 ---
 

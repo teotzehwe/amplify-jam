@@ -133,15 +133,23 @@ updates pushed over an event stream. Nothing to configure.
 **On Vercel** there is no disk and every request may hit a fresh instance, so
 it needs somewhere shared to keep the night:
 
-1. In your Vercel project, add a Redis store — Storage → Marketplace → **Upstash
-   for Redis** (`upstash/upstash-kv`), not QStash, which is a message queue and
-   sets none of the variables below. Vercel fills in `KV_REST_API_URL` and
-   `KV_REST_API_TOKEN`; `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`
-   are accepted too.
+1. In your Vercel project (**`amplify-jam`**), add a Redis store — Storage →
+   Marketplace → **Upstash for Redis** (`upstash/upstash-kv`), not QStash,
+   which is a message queue and sets none of the variables below. Vercel fills
+   in `KV_REST_API_URL` and `KV_REST_API_TOKEN`; `UPSTASH_REDIS_REST_URL` /
+   `UPSTASH_REDIS_REST_TOKEN` are accepted too.
 2. Set `HOST_KEY` to a secret of your choosing. Skip this and the host key is
-   generated per instance, printed to a log you cannot read, and stripped from
-   every response — leaving no way to open the host console.
-3. Deploy. `vercel.json` is already here — no build step, no dependencies.
+   generated into Redis with no way for you to learn it — the host console
+   stays locked. Prefer a long random string; change it only when you mean to
+   lock out old host links.
+3. Keep **Deployment Protection / Vercel Authentication off** on the production
+   deployment musicians use, or phones will hit a login wall.
+4. Deploy. `vercel.json` must keep the `/api/(.*)` → `/api/[...path]` route so
+   host endpoints like `/api/host/auth` work. No build step, no dependencies.
+5. Smoke-check `https://<your-app>/api/health` (`hasKv` and `hasHostKey` true)
+   and open `/host?k=<HOST_KEY>`.
+
+Canonical public URL when configured that way: `https://amplify-jam.vercel.app`.
 
 Amplify picks its backend from the environment: a key-value store when one is
 configured, the local file otherwise. Deploy without one and the API answers
