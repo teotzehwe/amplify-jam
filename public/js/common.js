@@ -355,6 +355,9 @@ export const approvedSongs = (state) => state.songs.filter((s) => s.status === '
 /** Requests still waiting on the host. Nobody can sign up for these yet. */
 export const pendingSongs = (state) => state.songs.filter((s) => s.status === 'pending');
 
+/** Requests the host turned down (shown to whoever asked). */
+export const declinedSongs = (state) => state.songs.filter((s) => s.status === 'declined');
+
 /** Who put their name down for a song, fewest turns tonight first. */
 export const signupsFor = (state, songId) => state.signups?.[songId] || [];
 

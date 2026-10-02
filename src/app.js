@@ -288,9 +288,8 @@ route('POST', /^\/api\/songs$/, (ctx) => {
 });
 
 /**
- * Let a request into the setlist. Declining one is a plain DELETE — there is
- * no third state to hold, and a request the host has said no to should not
- * linger on their screen asking again.
+ * Let a request into the setlist. Declining keeps a short note for the person
+ * who asked (status `declined`) instead of vanishing without a word.
  */
 route('POST', /^\/api\/host\/songs\/([\w-]+)\/approve$/, (ctx) => {
   requireHost(ctx);
@@ -299,6 +298,22 @@ route('POST', /^\/api\/host\/songs\/([\w-]+)\/approve$/, (ctx) => {
   store.update(() => {
     song.status = 'approved';
     song.approvedAt = Date.now();
+    delete song.declinedAt;
+    delete song.declineReason;
+  });
+  return { ok: true };
+});
+
+route('POST', /^\/api\/host\/songs\/([\w-]+)\/decline$/, (ctx) => {
+  requireHost(ctx);
+  const song = store.state.songs.find((s) => s.id === ctx.params[0]);
+  if (!song) throw new HttpError(404, 'Song not found');
+  if (song.status !== 'pending') throw bad('Only pending requests can be declined this way');
+  const reason = str(ctx.body?.reason, { max: 200 });
+  store.update(() => {
+    song.status = 'declined';
+    song.declinedAt = Date.now();
+    song.declineReason = reason;
   });
   return { ok: true };
 });

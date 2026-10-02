@@ -343,10 +343,56 @@ test('joining with a sign-up for an unapproved song does not smuggle one in', as
   assert.deepEqual(data.players.find((p) => p.id === sneak.data.id).stances, {});
 });
 
-test('declining a request removes it outright', async () => {
+test('declining a request keeps it with a note for whoever asked', async () => {
   await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const asker = await joinAs('Asker', ['Guitar']);
-  const req = await call('/songs', { method: 'POST', body: { title: 'Declined' }, player: asker.data.token });
+  const req = await call('/songs', { method: 'POST', body: { title: 'Maybe later' }, player: asker.data.token });
+
+  const declined = await call(`/host/songs/${req.data.id}/decline`, {
+    method: 'POST',
+    body: { reason: 'Already played this month' },
+    host: true,
+  });
+  assert.equal(declined.status, 200);
+
+  const { data } = await call('/state');
+  const song = data.songs.find((s) => s.id === req.data.id);
+  assert.equal(song.status, 'declined');
+  assert.equal(song.declineReason, 'Already played this month');
+  assert.ok(song.declinedAt);
+
+  // Nobody can sign up for a declined title either.
+  const fan = await joinAs('Fan', ['Bass']);
+  await call(`/players/${fan.data.id}`, {
+    method: 'PATCH', body: { stances: { [req.data.id]: 'in' } }, player: fan.data.token,
+  });
+  assert.deepEqual((await call('/state')).data.signups[req.data.id] || [], []);
+
+  // Only pending requests use this path; approved songs stay on DELETE.
+  assert.equal(
+    (await call(`/host/songs/${req.data.id}/decline`, { method: 'POST', body: {}, host: true })).status,
+    400,
+  );
+  assert.equal((await call('/host/songs/ghost/decline', { method: 'POST', body: {}, host: true })).status, 404);
+});
+
+test('the suggester can dismiss their own declined request', async () => {
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
+  const asker = await joinAs('Asker', ['Guitar']);
+  const req = await call('/songs', { method: 'POST', body: { title: 'Pass' }, player: asker.data.token });
+  await call(`/host/songs/${req.data.id}/decline`, { method: 'POST', body: { reason: '' }, host: true });
+
+  assert.equal(
+    (await call(`/songs/${req.data.id}`, { method: 'DELETE', player: asker.data.token })).status,
+    200,
+  );
+  assert.equal((await call('/state')).data.songs.find((s) => s.id === req.data.id), undefined);
+});
+
+test('host can still remove a request outright', async () => {
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
+  const asker = await joinAs('Asker', ['Guitar']);
+  const req = await call('/songs', { method: 'POST', body: { title: 'Gone' }, player: asker.data.token });
 
   assert.equal((await call(`/songs/${req.data.id}`, { method: 'DELETE', host: true })).status, 200);
   assert.equal((await call('/state')).data.songs.length, 0);
