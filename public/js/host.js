@@ -905,7 +905,9 @@ function settingsTab() {
     el('section', { class: 'card stack' },
       el('div', { class: 'card__head' }, el('h2', {}, 'Backup')),
       el('p', { class: 'section-note' },
-        'Download the whole night (roster, songs, tokens) so you can restore if Redis hiccups or someone clears too soon.'),
+        'Download the whole night (roster, songs, and player session tokens) so you can restore if Redis hiccups or someone clears too soon.'),
+      el('p', { class: 'section-note' },
+        'Treat the file like a password: anyone with it can restore those phones onto a night. Do not post it in chat or email.'),
       el('div', { class: 'row row--wrap' },
         el('button', {
           class: 'btn btn--primary',
@@ -915,7 +917,7 @@ function settingsTab() {
             const name = (jam.name || 'amplify-night').replace(/[^\w.-]+/g, '-').slice(0, 40);
             downloadJson(`${name}-${stamp}.json`, dump);
             sessionStorage.setItem('amplify.backupAt', String(Date.now()));
-            toast('Backup downloaded');
+            toast('Backup downloaded — keep the file private');
           })),
         }, 'Download backup'),
         el('label', { class: 'btn btn--ghost', style: { cursor: 'pointer' } },
