@@ -9,8 +9,12 @@ what is deliberately unfinished, and what not to break.
 ## Where things are
 
 - **Canonical product URL:** `https://amplify-jam.vercel.app`
-- **GitHub (legacy mirror, if used):** `teotzehwe/amplify-jam`
-- **Vercel project:** `amplify-jam` (not the old temporary claim projects)
+- **GitHub:** `teotzehwe/amplify-jam` (this is what should drive production deploys)
+- **Vercel project (canonical):** `amplify-jam` — keep **one** project linked to that
+  GitHub repo and that apex domain. A second project named `amplifyjam` has
+  existed and shared the same Redis night; that is dangerous (two prod URLs,
+  one state, GitHub may deploy the wrong project). Retire or unlink the
+  duplicate; do not run both.
 - **Default branch:** `main`
 
 ```bash
@@ -32,6 +36,7 @@ Before a night, confirm all of these on the **amplify-jam** Vercel project:
 4. **Deployment Protection / Vercel Authentication off** for the public jam URL (or musicians hit SSO)
 5. Smoke: `GET /api/health` → `hasKv: true`, `hasHostKey: true`; `GET /api/state` → `realtime: "poll"`; host unlock with your key
 6. Prefer the apex `amplify-jam.vercel.app` over `*-teotzehwe-3831s-projects.vercel.app` aliases
+7. Confirm GitHub → Vercel is wired to **amplify-jam** only (no second project auto-deploying `main` into a twin URL)
 
 Laptop hot spare: keep a folder with this repo + `node` on a USB. If Vercel dies, `node server.js` on venue wifi still runs the night from `data/jam.json`.
 

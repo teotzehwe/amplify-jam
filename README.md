@@ -133,23 +133,28 @@ updates pushed over an event stream. Nothing to configure.
 **On Vercel** there is no disk and every request may hit a fresh instance, so
 it needs somewhere shared to keep the night:
 
-1. In your Vercel project (**`amplify-jam`**), add a Redis store — Storage →
-   Marketplace → **Upstash for Redis** (`upstash/upstash-kv`), not QStash,
-   which is a message queue and sets none of the variables below. Vercel fills
-   in `KV_REST_API_URL` and `KV_REST_API_TOKEN`; `UPSTASH_REDIS_REST_URL` /
-   `UPSTASH_REDIS_REST_TOKEN` are accepted too.
-2. Set `HOST_KEY` to a secret of your choosing. Skip this and the host key is
+1. Use **one** Vercel project named **`amplify-jam`**, linked to the GitHub
+   repo `teotzehwe/amplify-jam`, with the apex domain `amplify-jam.vercel.app`.
+   Do not keep a second production project (e.g. `amplifyjam`) on the same
+   Redis — both URLs would mutate one night and deploys will drift.
+2. Add a Redis store — Storage → Marketplace → **Upstash for Redis**
+   (`upstash/upstash-kv`), not QStash, which is a message queue and sets none
+   of the variables below. Vercel fills in `KV_REST_API_URL` and
+   `KV_REST_API_TOKEN`; `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`
+   are accepted too.
+3. Set `HOST_KEY` to a secret of your choosing. Skip this and the host key is
    generated into Redis with no way for you to learn it — the host console
    stays locked. Prefer a long random string; change it only when you mean to
    lock out old host links.
-3. Keep **Deployment Protection / Vercel Authentication off** on the production
+4. Keep **Deployment Protection / Vercel Authentication off** on the production
    deployment musicians use, or phones will hit a login wall.
-4. Deploy. `vercel.json` must keep the `/api/(.*)` → `/api/[...path]` route so
-   host endpoints like `/api/host/auth` work. No build step, no dependencies.
-5. Smoke-check `https://<your-app>/api/health` (`hasKv` and `hasHostKey` true)
-   and open `/host?k=<HOST_KEY>`.
+5. Deploy from GitHub `main` (or `vercel --prod` against that same project).
+   `vercel.json` must keep the `/api/(.*)` → `/api/[...path]` route so host
+   endpoints like `/api/host/auth` work. No build step, no dependencies.
+6. Smoke-check `https://amplify-jam.vercel.app/api/health` (`hasKv` and
+   `hasHostKey` true) and open `/host?k=<HOST_KEY>`.
 
-Canonical public URL when configured that way: `https://amplify-jam.vercel.app`.
+Canonical public URL: `https://amplify-jam.vercel.app`.
 
 Amplify picks its backend from the environment: a key-value store when one is
 configured, the local file otherwise. Deploy without one and the API answers
