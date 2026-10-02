@@ -8,13 +8,28 @@ what is deliberately unfinished, and what not to break.
 
 ## Where things are
 
-- **Canonical product URL:** `https://amplify-jam.vercel.app`
-- **GitHub:** `teotzehwe/amplify-jam` (this is what should drive production deploys)
-- **Vercel project (canonical):** `amplify-jam` — keep **one** project linked to that
-  GitHub repo and that apex domain. A second project named `amplifyjam` has
-  existed and shared the same Redis night; that is dangerous (two prod URLs,
-  one state, GitHub may deploy the wrong project). Retire or unlink the
-  duplicate; do not run both.
+### Production (running nights)
+
+| Piece | Value |
+| --- | --- |
+| URL | `https://amplify-jam.vercel.app` |
+| GitHub | [`teotzehwe/amplify-jam`](https://github.com/teotzehwe/amplify-jam) |
+| Vercel project | `amplify-jam` |
+| Redis prefix | default (`amplify`) |
+
+### Testing / staging
+
+| Piece | Value |
+| --- | --- |
+| URL | `https://amplify-jam-test.vercel.app` (also `https://amplifyjam.vercel.app` while the old twin still exists) |
+| GitHub | [`teotzehwe/amplify-jam-test`](https://github.com/teotzehwe/amplify-jam-test) — duplicate of production; push experiments here |
+| Vercel project | `amplify-jam-test` (git-linked to the test repo) |
+| Redis prefix | `KV_PREFIX=amplify-test` so a shared Upstash database does not collide with production |
+
+Keep them separate: ship features on `amplify-jam-test` first, then merge/cherry-pick into `amplify-jam` when ready for a real night.
+
+The older Vercel project **`amplifyjam`** used to auto-deploy from the production GitHub repo and share the live night. Prefer `amplify-jam-test` for staging. In Vercel → `amplifyjam` → Settings → Git, disconnect it from `amplify-jam` (or reconnect it to `amplify-jam-test` only) so production pushes cannot redeploy the twin.
+
 - **Default branch:** `main`
 
 ```bash
