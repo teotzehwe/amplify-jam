@@ -143,6 +143,15 @@ test('clients are told to poll, because no stream can be held open', async () =>
   assert.equal((await call('/events')).status, 501);
 });
 
+test('health pings the key-value store', async () => {
+  const res = await call('/health');
+  assert.equal(res.status, 200);
+  assert.equal(res.data.ok, true);
+  assert.equal(res.data.storeOk, true);
+  assert.equal(res.data.hasKv, true);
+  assert.equal(res.data.realtime, 'poll');
+});
+
 test('the host key still never leaves the server', async () => {
   const { data } = await call('/state');
   assert.equal(data.hostToken, undefined);

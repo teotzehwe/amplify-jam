@@ -643,10 +643,19 @@ export async function handleRequest(req, res) {
   if (path.startsWith('/api/')) {
     // Ops probe — available even when the jam is misconfigured.
     if (path === '/api/health' && (req.method === 'GET' || req.method === 'HEAD')) {
-      return send(res, 200, {
-        ok: true,
+      const hasKv = store.realtime === 'poll';
+      let storeOk = true;
+      try {
+        storeOk = await store.ping();
+      } catch {
+        storeOk = false;
+      }
+      const ok = storeOk && (!process.env.VERCEL || (hasKv && Boolean(process.env.HOST_KEY)));
+      return send(res, ok ? 200 : 503, {
+        ok,
+        storeOk,
         realtime: store.realtime,
-        hasKv: store.realtime === 'poll',
+        hasKv,
         hasHostKey: Boolean(process.env.HOST_KEY),
         vercel: Boolean(process.env.VERCEL),
       });

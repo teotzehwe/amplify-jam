@@ -538,6 +538,7 @@ test('health reports store mode without secrets', async () => {
   const res = await call('/health');
   assert.equal(res.status, 200);
   assert.equal(res.data.ok, true);
+  assert.equal(res.data.storeOk, true);
   assert.equal(res.data.realtime, 'sse');
   assert.equal(res.data.hasKv, false);
   assert.equal(res.data.hasHostKey, false);
