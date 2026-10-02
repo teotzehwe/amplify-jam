@@ -498,6 +498,12 @@ route('POST', /^\/api\/host\/skip$/, (ctx) => {
 route('POST', /^\/api\/host\/reset$/, (ctx) => {
   requireHost(ctx);
   const mode = oneOf(ctx.body.mode, ['turns', 'night'], 'turns');
+  // Clearing the night is irreversible and there is no Redis undo. The host
+  // console downloads a backup first and sends confirmBackup so a stray tap
+  // cannot wipe a room without that step.
+  if (mode === 'night' && ctx.body.confirmBackup !== true) {
+    throw bad('Download a backup first, then clear the night');
+  }
   store.update((state) => {
     state.current = null;
     state.rounds = [];
@@ -509,6 +515,44 @@ route('POST', /^\/api\/host\/reset$/, (ctx) => {
     }
   });
   return { ok: true };
+});
+
+/**
+ * Full night snapshot for the host — includes player tokens so a restore puts
+ * phones back where they were. Never expose this without a host key.
+ */
+route('GET', /^\/api\/host\/export$/, (ctx) => {
+  requireHost(ctx);
+  const snap = structuredClone(store.state);
+  return {
+    format: 'amplify-night-v1',
+    exportedAt: Date.now(),
+    version: store.version,
+    night: snap,
+  };
+});
+
+/** Replace the live night with a previously exported snapshot. */
+route('POST', /^\/api\/host\/import$/, (ctx) => {
+  requireHost(ctx);
+  const body = ctx.body || {};
+  const night = body.night || body;
+  if (!night || typeof night !== 'object' || !night.jam || !Array.isArray(night.players) || !Array.isArray(night.songs)) {
+    throw bad('That file does not look like an Amplify night backup');
+  }
+  store.update((state) => {
+    // Keep the live host key (env or current night) — a backup must not
+    // silently swap who can open the console.
+    const hostToken = state.hostToken;
+    const next = structuredClone(night);
+    next.hostToken = hostToken;
+    if (!Array.isArray(next.rounds)) next.rounds = [];
+    if (next.roundIndex == null) next.roundIndex = 0;
+    if (next.current === undefined) next.current = null;
+    for (const key of Object.keys(state)) delete state[key];
+    Object.assign(state, next);
+  });
+  return { ok: true, jam: store.state.jam.name };
 });
 
 /* --------------------------------------------------------------------- SSE */

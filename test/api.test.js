@@ -126,7 +126,7 @@ test('host endpoints reject a missing or wrong key', async () => {
   assert.equal((await call('/host/pick', { method: 'POST', body: { playerId: 'u1' } })).status, 403);
   assert.equal((await call('/host/unpick', { method: 'POST', body: { playerId: 'u1' } })).status, 403);
   assert.equal((await call('/host/settings', { method: 'PATCH', body: { requireApproval: true } })).status, 403);
-  assert.equal((await call('/host/reset', { method: 'POST', body: { mode: 'night' } })).status, 403);
+  assert.equal((await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true } })).status, 403);
   assert.equal((await call('/host/auth', { method: 'POST', body: { token: 'nope' } })).status, 403);
   assert.equal((await call('/host/songs/ghost/approve', { method: 'POST' })).status, 403);
 });
@@ -152,7 +152,7 @@ test('the host can edit anyone', async () => {
 });
 
 test('a full round trip: a song, sign-ups, a hand-picked band, committed turns', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
 
   const song = await call('/songs', { method: 'POST', body: { title: 'Test Song' }, host: true });
   assert.equal(song.status, 200);
@@ -183,7 +183,7 @@ test('a full round trip: a song, sign-ups, a hand-picked band, committed turns',
 });
 
 test('the API refuses to seat anybody who did not sign up', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const song = await call('/songs', { method: 'POST', body: { title: 'Not For Me' }, host: true });
 
   const silent = await joinAs('Never Asked', ['Drums']);
@@ -202,7 +202,7 @@ test('the API refuses to seat anybody who did not sign up', async () => {
 });
 
 test('picking someone twice moves their instrument instead of seating them twice', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const song = await call('/songs', { method: 'POST', body: { title: 'Swap' }, host: true });
   const p = await joinAs('Multi', ['Guitar', 'Keys'], { stances: { [song.data.id]: 'in' } });
 
@@ -219,7 +219,7 @@ test('picking someone twice moves their instrument instead of seating them twice
 });
 
 test('a song nobody is on cannot be marked played', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const song = await call('/songs', { method: 'POST', body: { title: 'Empty' }, host: true });
   await call('/host/lineup', { method: 'POST', body: { songId: song.data.id }, host: true });
 
@@ -229,7 +229,7 @@ test('a song nobody is on cannot be marked played', async () => {
 });
 
 test('skipping a song leaves every turn count untouched', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const song = await call('/songs', { method: 'POST', body: { title: 'Skipped' }, host: true });
   const p = await joinAs('Skipper', ['Guitar'], { stances: { [song.data.id]: 'in' } });
 
@@ -244,7 +244,7 @@ test('skipping a song leaves every turn count untouched', async () => {
 });
 
 test('a signed-in player can suggest songs, with no limit on how many', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const p = await joinAs('Suggester', ['Guitar']);
 
   for (let i = 0; i < 25; i++) {
@@ -265,7 +265,7 @@ test('a signed-in player can suggest songs, with no limit on how many', async ()
 /* ------------------------------------------------------------- vetting */
 
 test('a request stays pending even when the browser also holds the host key', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const asker = await joinAs('Asker', ['Guitar']);
 
   // Same phone often has both tokens after the host opens their console.
@@ -288,7 +288,7 @@ test('a request stays pending even when the browser also holds the host key', as
 });
 
 test('a request waits for the host, and nobody can sign up for it meanwhile', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const asker = await joinAs('Asker', ['Guitar']);
   const fan = await joinAs('Fan', ['Bass']);
 
@@ -312,7 +312,7 @@ test('a request waits for the host, and nobody can sign up for it meanwhile', as
 });
 
 test('approving a request lets it onto the setlist and collect sign-ups', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const asker = await joinAs('Asker', ['Guitar']);
   const fan = await joinAs('Fan', ['Bass']);
 
@@ -333,7 +333,7 @@ test('approving a request lets it onto the setlist and collect sign-ups', async 
 });
 
 test('joining with a sign-up for an unapproved song does not smuggle one in', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const asker = await joinAs('Asker', ['Guitar']);
   const req = await call('/songs', { method: 'POST', body: { title: 'Sneaky' }, player: asker.data.token });
 
@@ -344,7 +344,7 @@ test('joining with a sign-up for an unapproved song does not smuggle one in', as
 });
 
 test('declining a request removes it outright', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const asker = await joinAs('Asker', ['Guitar']);
   const req = await call('/songs', { method: 'POST', body: { title: 'Declined' }, player: asker.data.token });
 
@@ -354,7 +354,7 @@ test('declining a request removes it outright', async () => {
 });
 
 test('turning approval off releases everything already waiting', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const asker = await joinAs('Asker', ['Guitar']);
   await call('/songs', { method: 'POST', body: { title: 'Queued A' }, player: asker.data.token });
   await call('/songs', { method: 'POST', body: { title: 'Queued B' }, player: asker.data.token });
@@ -373,7 +373,7 @@ test('turning approval off releases everything already waiting', async () => {
 });
 
 test('suggestions are refused when the host closes them', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const p = await joinAs('Hopeful', ['Guitar']);
   await call('/host/settings', { method: 'PATCH', body: { allowSuggestions: false }, host: true });
 
@@ -391,7 +391,7 @@ test('a stranger with no sign-up cannot suggest songs', async () => {
 });
 
 test('you can take back your own suggestion, but not somebody else’s', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const mine = await joinAs('Mine', ['Guitar']);
   const other = await joinAs('Other', ['Guitar']);
 
@@ -406,7 +406,7 @@ test('you can take back your own suggestion, but not somebody else’s', async (
 });
 
 test('a suggestion cannot be pulled once someone else has signed up for it', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const mine = await joinAs('Author', ['Guitar']);
   const fan = await joinAs('Fan', ['Bass']);
 
@@ -425,7 +425,7 @@ test('a suggestion cannot be pulled once someone else has signed up for it', asy
 });
 
 test('removing a song clears the sign-ups that pointed at it', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const p = await joinAs('Fan', ['Guitar']);
   const song = await call('/songs', { method: 'POST', body: { title: 'Doomed' }, host: true });
 
@@ -443,7 +443,7 @@ test('removing a song clears the sign-ups that pointed at it', async () => {
 });
 
 test('the host can rearrange the queue', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const ids = [];
   for (const title of ['One', 'Two', 'Three']) {
     ids.push((await call('/songs', { method: 'POST', body: { title }, host: true })).data.id);
@@ -459,7 +459,7 @@ test('the host can rearrange the queue', async () => {
 });
 
 test('reordering never loses a song a stale tab did not know about', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const a = (await call('/songs', { method: 'POST', body: { title: 'A' }, host: true })).data.id;
   const b = (await call('/songs', { method: 'POST', body: { title: 'B' }, host: true })).data.id;
   await call('/songs', { method: 'POST', body: { title: 'Added meanwhile' }, host: true });
@@ -472,7 +472,7 @@ test('reordering never loses a song a stale tab did not know about', async () =>
 });
 
 test('reordering ignores unknown ids and requires the host key', async () => {
-  await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
   const id = (await call('/songs', { method: 'POST', body: { title: 'Only' }, host: true })).data.id;
 
   assert.equal((await call('/host/songs/order', { method: 'POST', body: { order: [id] } })).status, 403);
@@ -506,4 +506,37 @@ test('free text is length-capped rather than stored unbounded', async () => {
   const player = data.players.find((p) => p.id === res.data.id);
   assert.ok(player.name.length <= 60);
   assert.ok(player.notes.length <= 280);
+});
+
+test('clearing the night without a backup confirmation is refused', async () => {
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
+  await joinAs('Keep Me');
+  const refused = await call('/host/reset', { method: 'POST', body: { mode: 'night' }, host: true });
+  assert.equal(refused.status, 400);
+  const { data } = await call('/state');
+  assert.ok(data.players.some((p) => p.name === 'Keep Me'), 'roster must survive a refused clear');
+});
+
+test('the host can export and restore a night backup', async () => {
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
+  await call('/host/settings', { method: 'PATCH', body: { name: 'Backup Jam' }, host: true });
+  const song = await call('/songs', { method: 'POST', body: { title: 'Keep Song' }, host: true });
+  const player = await joinAs('Backup Player', ['Bass'], { stances: { [song.data.id]: 'in' } });
+
+  const exported = await call('/host/export', { host: true });
+  assert.equal(exported.status, 200);
+  assert.equal(exported.data.format, 'amplify-night-v1');
+  assert.equal(exported.data.night.jam.name, 'Backup Jam');
+  assert.ok(exported.data.night.players.some((p) => p.token === player.data.token),
+    'export keeps player tokens so phones can be restored');
+
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
+  assert.equal((await call('/state')).data.players.length, 0);
+
+  const restored = await call('/host/import', { method: 'POST', body: exported.data, host: true });
+  assert.equal(restored.status, 200);
+  const { data } = await call('/state');
+  assert.equal(data.jam.name, 'Backup Jam');
+  assert.ok(data.songs.some((s) => s.title === 'Keep Song'));
+  assert.ok(data.players.some((p) => p.name === 'Backup Player'));
 });
