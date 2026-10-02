@@ -582,12 +582,31 @@ export async function handleRequest(req, res) {
   }
 
   if (path.startsWith('/api/')) {
+    // Ops probe — available even when the jam is misconfigured.
+    if (path === '/api/health' && (req.method === 'GET' || req.method === 'HEAD')) {
+      return send(res, 200, {
+        ok: true,
+        realtime: store.realtime,
+        hasKv: store.realtime === 'poll',
+        hasHostKey: Boolean(process.env.HOST_KEY),
+        vercel: Boolean(process.env.VERCEL),
+      });
+    }
+
     // On Vercel the file backend cannot persist (read-only /var/task). Without a
     // Redis/KV store, every instance invents its own night and writes 500. Say
     // so before a join looks like a broken form.
     if (process.env.VERCEL && store.realtime === 'sse') {
       return send(res, 503, {
         error: 'No key-value store configured. In Vercel → Storage, add Upstash Redis (sets KV_REST_API_URL and KV_REST_API_TOKEN), set HOST_KEY, then redeploy.',
+      });
+    }
+
+    // Hosted deploys never print a generated key. Without HOST_KEY the console
+    // is permanently locked — fail loud at the door instead of at unlock time.
+    if (process.env.VERCEL && !process.env.HOST_KEY) {
+      return send(res, 503, {
+        error: 'HOST_KEY is not set. Add it under Vercel → Settings → Environment Variables, then redeploy.',
       });
     }
 
