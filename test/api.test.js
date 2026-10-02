@@ -131,6 +131,13 @@ test('host endpoints reject a missing or wrong key', async () => {
   assert.equal((await call('/host/songs/ghost/approve', { method: 'POST' })).status, 403);
 });
 
+test('the host key in a query string does not unlock API routes', async () => {
+  // ?k= is for the /host page bookmark only; API auth is header-only.
+  const res = await fetch(`${base}/api/host/export?k=${encodeURIComponent(hostKey)}`);
+  assert.equal(res.status, 403);
+  assert.match((await res.json()).error, /Host key required/);
+});
+
 test('a player may edit their own sign-up but not anybody else’s', async () => {
   const a = await joinAs('Player A');
   const b = await joinAs('Player B');
