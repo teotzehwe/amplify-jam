@@ -295,6 +295,10 @@ route('POST', /^\/api\/host\/songs\/([\w-]+)\/approve$/, (ctx) => {
   requireHost(ctx);
   const song = store.state.songs.find((s) => s.id === ctx.params[0]);
   if (!song) throw new HttpError(404, 'Song not found');
+  // Same gate as decline: only a waiting request can be waved through. A
+  // declined title stays declined unless the host removes it and someone asks
+  // again — approve must not quietly resurrect a "no".
+  if (song.status !== 'pending') throw bad('Only pending requests can be approved this way');
   store.update(() => {
     song.status = 'approved';
     song.approvedAt = Date.now();
