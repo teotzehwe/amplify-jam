@@ -11,7 +11,7 @@ import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { openStore, newId, DEFAULT_INSTRUMENTS } from './store.js';
+import { openStore, newId, DEFAULT_INSTRUMENTS, migrate } from './store.js';
 import { commitRound, instrumentFor, mayPlay, signupsFor, STANCES, LEVELS } from './signups.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -547,23 +547,52 @@ route('GET', /^\/api\/host\/export$/, (ctx) => {
   };
 });
 
+const SONG_STATUSES = new Set(['pending', 'approved', 'declined']);
+const BACKUP_MAX_ROWS = 500;
+
+/** Shape-check a night backup before it replaces the live room. */
+function assertNightBackup(night) {
+  if (!night || typeof night !== 'object' || Array.isArray(night)) {
+    throw bad('That file does not look like an Amplify night backup');
+  }
+  if (!night.jam || typeof night.jam !== 'object' || Array.isArray(night.jam)) {
+    throw bad('That file does not look like an Amplify night backup');
+  }
+  if (!Array.isArray(night.players) || !Array.isArray(night.songs)) {
+    throw bad('That file does not look like an Amplify night backup');
+  }
+  if (night.players.length > BACKUP_MAX_ROWS || night.songs.length > BACKUP_MAX_ROWS) {
+    throw bad('That backup is too large to restore');
+  }
+  if (night.rounds != null && !Array.isArray(night.rounds)) {
+    throw bad('That file does not look like an Amplify night backup');
+  }
+  for (const p of night.players) {
+    if (!p || typeof p !== 'object' || typeof p.id !== 'string' || typeof p.token !== 'string' || typeof p.name !== 'string') {
+      throw bad('A player in that backup is incomplete');
+    }
+  }
+  for (const s of night.songs) {
+    if (!s || typeof s !== 'object' || typeof s.id !== 'string' || typeof s.title !== 'string') {
+      throw bad('A song in that backup is incomplete');
+    }
+    if (s.status != null && !SONG_STATUSES.has(s.status)) {
+      throw bad('A song in that backup has an unknown status');
+    }
+  }
+}
+
 /** Replace the live night with a previously exported snapshot. */
 route('POST', /^\/api\/host\/import$/, (ctx) => {
   requireHost(ctx);
   const body = ctx.body || {};
   const night = body.night || body;
-  if (!night || typeof night !== 'object' || !night.jam || !Array.isArray(night.players) || !Array.isArray(night.songs)) {
-    throw bad('That file does not look like an Amplify night backup');
-  }
+  assertNightBackup(night);
   store.update((state) => {
     // Keep the live host key (env or current night) — a backup must not
-    // silently swap who can open the console.
+    // silently swap who can open the console. migrate() fills older shapes.
     const hostToken = state.hostToken;
-    const next = structuredClone(night);
-    next.hostToken = hostToken;
-    if (!Array.isArray(next.rounds)) next.rounds = [];
-    if (next.roundIndex == null) next.roundIndex = 0;
-    if (next.current === undefined) next.current = null;
+    const next = migrate(structuredClone(night), hostToken);
     for (const key of Object.keys(state)) delete state[key];
     Object.assign(state, next);
   });

@@ -57,7 +57,7 @@ function defaultState(hostKey) {
 const RETIRED_SETTINGS = ['restSongs', 'maxConsecutive', 'maybeCountsAsAvailable'];
 
 /** Fill in anything a hand-edited or older state file is missing. */
-function migrate(state, hostKey) {
+export function migrate(state, hostKey) {
   const base = defaultState(hostKey);
   const out = { ...base, ...state, jam: { ...base.jam, ...(state.jam || {}) } };
   // A host key given by the environment outranks the stored one. On a hosted

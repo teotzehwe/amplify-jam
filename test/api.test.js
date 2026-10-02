@@ -596,3 +596,44 @@ test('the host can export and restore a night backup', async () => {
   assert.ok(data.songs.some((s) => s.title === 'Keep Song'));
   assert.ok(data.players.some((p) => p.name === 'Backup Player'));
 });
+
+test('import refuses backups with incomplete players or unknown song status', async () => {
+  await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true }, host: true });
+  const base = {
+    format: 'amplify-night-v1',
+    night: {
+      jam: { name: 'X', createdAt: 1, allowSuggestions: true, requireApproval: true, slots: [] },
+      players: [],
+      songs: [],
+      rounds: [],
+      roundIndex: 0,
+      current: null,
+    },
+  };
+
+  assert.equal(
+    (await call('/host/import', {
+      method: 'POST',
+      body: { ...base, night: { ...base.night, players: [{ id: 'u1', name: 'No Token' }] } },
+      host: true,
+    })).status,
+    400,
+  );
+  assert.equal(
+    (await call('/host/import', {
+      method: 'POST',
+      body: {
+        ...base,
+        night: {
+          ...base.night,
+          songs: [{ id: 's1', title: 'Weird', status: 'mystery' }],
+        },
+      },
+      host: true,
+    })).status,
+    400,
+  );
+  const { data } = await call('/state');
+  assert.notEqual(data.jam.name, 'X');
+  assert.ok(!data.songs.some((s) => s.status === 'mystery'));
+});
