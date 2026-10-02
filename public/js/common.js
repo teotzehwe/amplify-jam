@@ -70,8 +70,30 @@ export async function api(path, { method = 'GET', body, as = 'auto' } = {}) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    const err = new Error(data.error || `Request failed (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
   return data;
+}
+
+/**
+ * Sticky banner for outages (Redis missing, network down). Survives redraws
+ * because it lives outside `#app`.
+ */
+export function setConnectionBanner(message, kind = 'error') {
+  let node = document.getElementById('conn-banner');
+  if (!message) {
+    node?.remove();
+    return;
+  }
+  if (!node) {
+    node = el('div', { id: 'conn-banner', role: 'alert' });
+    document.body.prepend(node);
+  }
+  node.className = `conn-banner conn-banner--${kind}`;
+  node.textContent = message;
 }
 
 /* ------------------------------------------------------------------- toast */
@@ -254,6 +276,7 @@ export function subscribe(onState) {
     pulling = true;
     try {
       const state = await api('/state');
+      setConnectionBanner(null);
       connect(state.realtime);
       if (retryTimer) {
         clearTimeout(retryTimer);
@@ -265,13 +288,19 @@ export function subscribe(onState) {
       }
     } catch (err) {
       console.warn('state refresh failed', err);
+      const msg = err.status === 503
+        ? (err.message || 'The jam server is not ready (usually Redis / HOST_KEY).')
+        : last < 0
+          ? 'Cannot reach the jam server. Retrying…'
+          : 'Connection lost — showing the last update. Retrying…';
+      setConnectionBanner(msg, err.status === 503 ? 'error' : 'warn');
       // A failed first load used to leave a blank page with no retry. Keep
       // poking until we have something to show, then lean on poll/SSE.
-      if (last < 0 && !retryTimer) {
+      if (!retryTimer) {
         retryTimer = setTimeout(() => {
           retryTimer = null;
           pull(true);
-        }, 1500);
+        }, last < 0 ? 1500 : 4000);
       }
     } finally {
       pulling = false;
