@@ -856,7 +856,53 @@ function settingsTab() {
     ),
 
     el('section', { class: 'card stack' },
+      el('div', { class: 'card__head' }, el('h2', {}, 'Backup')),
+      el('p', { class: 'section-note' },
+        'Download the whole night (roster, songs, tokens) so you can restore if Redis hiccups or someone clears too soon.'),
+      el('div', { class: 'row row--wrap' },
+        el('button', {
+          class: 'btn btn--primary',
+          onClick: guard(busy(async () => {
+            const dump = await api('/host/export');
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const name = (jam.name || 'amplify-night').replace(/[^\w.-]+/g, '-').slice(0, 40);
+            downloadJson(`${name}-${stamp}.json`, dump);
+            sessionStorage.setItem('amplify.backupAt', String(Date.now()));
+            toast('Backup downloaded');
+          })),
+        }, 'Download backup'),
+        el('label', { class: 'btn btn--ghost', style: { cursor: 'pointer' } },
+          'Restore backup…',
+          el('input', {
+            type: 'file',
+            accept: 'application/json,.json',
+            style: { display: 'none' },
+            onChange: guard(async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              let dump;
+              try {
+                dump = JSON.parse(await file.text());
+              } catch {
+                return toast('That file is not valid JSON', 'error');
+              }
+              if (!confirm(`Replace the live night with “${dump.night?.jam?.name || dump.jam?.name || 'this backup'}”? Everyone’s current sheet will change.`)) {
+                return;
+              }
+              await api('/host/import', { method: 'POST', body: dump });
+              toast('Night restored');
+              refresh(true);
+            }),
+          }),
+        ),
+      ),
+    ),
+
+    el('section', { class: 'card stack' },
       el('div', { class: 'card__head' }, el('h2', {}, 'Start over')),
+      el('p', { class: 'section-note' },
+        'Clearing the night needs a fresh backup download first — there is no undo.'),
       el('div', { class: 'row row--wrap' },
         confirmButton({
           key: 'reset-turns',
@@ -877,7 +923,18 @@ function settingsTab() {
           confirmClass: 'btn btn--danger',
           title: 'Clear the whole night — every sign-up and song?',
           onConfirm: async () => {
-            await api('/host/reset', { method: 'POST', body: { mode: 'night' } });
+            const backedUpAt = Number(sessionStorage.getItem('amplify.backupAt') || 0);
+            if (!backedUpAt || Date.now() - backedUpAt > 15 * 60 * 1000) {
+              const dump = await api('/host/export');
+              const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+              const name = (jam.name || 'amplify-night').replace(/[^\w.-]+/g, '-').slice(0, 40);
+              downloadJson(`${name}-${stamp}.json`, dump);
+              sessionStorage.setItem('amplify.backupAt', String(Date.now()));
+              toast('Backup downloaded — tap Clear again to wipe the night');
+              return;
+            }
+            await api('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true } });
+            sessionStorage.removeItem('amplify.backupAt');
             toast('Fresh night');
           },
           onChange: draw,
@@ -885,6 +942,16 @@ function settingsTab() {
       ),
     ),
   );
+}
+
+function downloadJson(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 /** Add, remove and re-count the chairs in the band. */
