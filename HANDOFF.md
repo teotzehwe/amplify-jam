@@ -219,6 +219,9 @@ token twice.
   those titles on the signup sheet.
 - **Hosted path is live** on Upstash Redis (`realtime: "poll"`). Still keep a
   laptop spare: Redis/region outages and bad deploys have already broken nights.
+- **Session report is a shareable PDF** (Host → Settings → Session report):
+  roster, setlist, who played, pending/declined — no session tokens. Distinct
+  from **Download backup**, which is a restore dump and must stay private.
 - **Backup the night before destructive actions.** Use **Download backup** on
   the host console (includes player session tokens — treat the file like a
   password). Clearing the night requires that recent export. There is no
@@ -238,7 +241,8 @@ npm test
   sign-up, that silence never does, caps and breaks informing rather than
   blocking, coverage, turn counts and streaks.
 - `test/api.test.js` — boots the real server; auth, validation, vetting, the
-  refusal to seat anyone who did not sign up, round trips.
+  refusal to seat anyone who did not sign up, round trips, session PDF report.
+- `test/report.test.js` — session report content (no tokens) and PDF assembly.
 - `test/kv.test.js` — the hosted path against a stand-in speaking the Upstash
   REST protocol, including the compare-and-set script. **The eight-simultaneous-
   sign-ups test is the one that found both concurrency bugs. Keep it.** It is

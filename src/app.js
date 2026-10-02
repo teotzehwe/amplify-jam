@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url';
 
 import { openStore, newId, DEFAULT_INSTRUMENTS, migrate } from './store.js';
 import { commitRound, instrumentFor, mayPlay, signupsFor, STANCES, LEVELS } from './signups.js';
+import { buildPdf } from './pdf.js';
+import { buildSessionReport } from './report.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PUBLIC = join(ROOT, 'public');
@@ -569,6 +571,25 @@ route('GET', /^\/api\/host\/export$/, (ctx) => {
   };
 });
 
+/**
+ * Shareable day-of PDF: roster, setlist, who played. No session tokens.
+ * Distinct from /host/export, which is a restore backup.
+ */
+route('GET', /^\/api\/host\/report$/, (ctx) => {
+  requireHost(ctx);
+  const report = buildSessionReport(store.state);
+  const pdf = buildPdf(report);
+  const stamp = new Date().toISOString().slice(0, 10);
+  const slug = (store.state.jam?.name || 'amplify-session')
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40) || 'amplify-session';
+  return {
+    __pdf: pdf,
+    filename: `${slug}-${stamp}.pdf`,
+  };
+});
+
 const SONG_STATUSES = new Set(['pending', 'approved', 'declined']);
 const BACKUP_MAX_ROWS = 500;
 
@@ -751,6 +772,15 @@ export async function handleRequest(req, res) {
 
     try {
       const result = await store.run(() => match.handler(ctx) ?? { ok: true });
+      // Host session report returns a PDF buffer — not JSON. Hand it through
+      // as application/pdf so the browser can download it directly.
+      if (result && Buffer.isBuffer(result.__pdf)) {
+        const name = String(result.filename || 'session-report.pdf').replace(/[^\w.-]+/g, '-');
+        return send(res, 200, result.__pdf, {
+          'content-type': 'application/pdf',
+          'content-disposition': `attachment; filename="${name}"`,
+        });
+      }
       return send(res, 200, result);
     } catch (err) {
       const status = err.status ?? 500;
