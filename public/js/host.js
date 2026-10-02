@@ -903,6 +903,21 @@ function settingsTab() {
     ),
 
     el('section', { class: 'card stack' },
+      el('div', { class: 'card__head' }, el('h2', {}, 'Session report')),
+      el('p', { class: 'section-note' },
+        'A shareable PDF of tonight — roster, setlist, who played, and waiting or declined requests. No session tokens.'),
+      el('div', { class: 'row row--wrap' },
+        el('button', {
+          class: 'btn btn--primary',
+          onClick: guard(busy(async () => {
+            await downloadSessionReport();
+            toast('Session report downloaded');
+          }, 'host-report')),
+        }, 'Download PDF report'),
+      ),
+    ),
+
+    el('section', { class: 'card stack' },
       el('div', { class: 'card__head' }, el('h2', {}, 'Backup')),
       el('p', { class: 'section-note' },
         'Download the whole night (roster, songs, and player session tokens) so you can restore if Redis hiccups or someone clears too soon.'),
@@ -995,6 +1010,27 @@ function settingsTab() {
 
 function downloadJson(filename, data) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Fetch the host session PDF and trigger a browser download (not via api()). */
+async function downloadSessionReport() {
+  if (!tokens.host) throw new Error('Host key required');
+  const res = await fetch('/api/host/report', {
+    headers: { 'x-host-token': tokens.host },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  const match = /filename="([^"]+)"/i.exec(res.headers.get('content-disposition') || '');
+  const filename = match?.[1] || 'session-report.pdf';
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
