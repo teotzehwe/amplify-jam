@@ -209,13 +209,15 @@ token twice.
 - **Vocabulary is hardcoded** — "song", "instrument", "jam". Adapting to
   another domain means a vocabulary layer plus renaming those fields.
 - **Turn counts reset each night.** No season-long fairness.
-- **A declined request is gone, with no note to whoever asked.** They see it
-  disappear from their pending list. A one-line reason would be kinder.
+- **Declined requests stay visible to whoever asked** (“Not this time” plus an
+  optional host note). They can dismiss the row themselves; the room never sees
+  those titles on the signup sheet.
 - **Hosted path is live** on Upstash Redis (`realtime: "poll"`). Still keep a
   laptop spare: Redis/region outages and bad deploys have already broken nights.
-- **Backup the night before destructive actions.** Export from the host console
-  (when that feature is merged) or copy the Redis `amplify:state` value. There
-  is no automatic undo for “Clear the night”.
+- **Backup the night before destructive actions.** Use **Download backup** on
+  the host console (includes player session tokens — treat the file like a
+  password). Clearing the night requires that recent export. There is no
+  automatic undo for “Clear the night”.
 - **Rotate secrets that were pasted into chat** (Redis tokens, host keys, GitHub
   PATs). Treat chat as public.
 

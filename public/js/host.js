@@ -885,7 +885,7 @@ function settingsTab() {
             type: 'file',
             accept: 'application/json,.json',
             style: { display: 'none' },
-            onChange: guard(async (e) => {
+            onChange: guard(busy(async (e) => {
               const file = e.target.files?.[0];
               e.target.value = '';
               if (!file) return;
@@ -901,7 +901,7 @@ function settingsTab() {
               await api('/host/import', { method: 'POST', body: dump });
               toast('Night restored');
               refresh(true);
-            }),
+            }, 'host-import')),
           }),
         ),
       ),

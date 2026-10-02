@@ -188,7 +188,9 @@ route('GET', /^\/api\/state$/, (ctx) => {
     // Who put their name down for each song. This is the whole queue: the
     // stage display reads it out and the host picks the band from it.
     signups: Object.fromEntries(
-      store.state.songs.map((s) => [s.id, signupsFor(store.state.players, s)]),
+      store.state.songs
+        .filter((s) => s.status === 'approved' || s.status === 'pending')
+        .map((s) => [s.id, signupsFor(store.state.players, s)]),
     ),
   };
 });
