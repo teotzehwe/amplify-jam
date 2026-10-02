@@ -373,6 +373,12 @@ test('declining a request keeps it with a note for whoever asked', async () => {
     (await call(`/host/songs/${req.data.id}/decline`, { method: 'POST', body: {}, host: true })).status,
     400,
   );
+  // Approve must not resurrect a declined title.
+  assert.equal(
+    (await call(`/host/songs/${req.data.id}/approve`, { method: 'POST', host: true })).status,
+    400,
+  );
+  assert.equal((await call('/state')).data.songs.find((s) => s.id === req.data.id).status, 'declined');
   assert.equal((await call('/host/songs/ghost/decline', { method: 'POST', body: {}, host: true })).status, 404);
 });
 
