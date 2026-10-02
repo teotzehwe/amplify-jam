@@ -682,7 +682,10 @@ export async function handleRequest(req, res) {
     const ctx = {
       params: path.match(match.pattern).slice(1),
       body,
-      hostToken: req.headers['x-host-token'] || url.searchParams.get('k') || '',
+      // Host key on the query string used to work for convenience, but ?k=
+      // leaks via Referer and access logs. The /host page still reads ?k= in
+      // the browser and stores it; API calls must send x-host-token.
+      hostToken: req.headers['x-host-token'] || '',
       playerToken: req.headers['x-player-token'] || '',
     };
 
