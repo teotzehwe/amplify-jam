@@ -341,8 +341,7 @@ function suggestSong(you) {
     onKeydown: (e) => e.key === 'Enter' && add(),
   });
 
-  // Count only open asks — declined titles have their own “Not this time” section.
-  const mine = state.songs.filter((s) => s.suggestedBy === you.id && s.status !== 'declined');
+  const mine = state.songs.filter((s) => s.suggestedBy === you.id);
   const gated = state.jam.requireApproval;
 
   return el('section', { class: 'folio' },
