@@ -488,6 +488,16 @@ test('unknown endpoints and methods are refused cleanly', async () => {
   assert.equal((await call('/state', { method: 'DELETE' })).status, 404);
 });
 
+test('health reports store mode without secrets', async () => {
+  const res = await call('/health');
+  assert.equal(res.status, 200);
+  assert.equal(res.data.ok, true);
+  assert.equal(res.data.realtime, 'sse');
+  assert.equal(res.data.hasKv, false);
+  assert.equal(res.data.hasHostKey, false);
+  assert.equal(res.data.hostToken, undefined);
+});
+
 test('oversized and malformed payloads are rejected, not crashed on', async () => {
   const res = await fetch(base + '/api/join', {
     method: 'POST',
