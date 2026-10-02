@@ -599,6 +599,42 @@ test('clearing the night without a backup confirmation is refused', async () => 
   assert.equal(data.lastHostExportAt, undefined, 'export timestamp stays off public state');
 });
 
+test('the host can download a session PDF report without tokens', async () => {
+  await clearNight();
+  await call('/host/settings', { method: 'PATCH', body: { name: 'Report Jam' }, host: true });
+  const song = await call('/songs', {
+    method: 'POST',
+    body: { title: 'Report Song', artist: 'Locals' },
+    host: true,
+  });
+  const player = await joinAs('Reporter', ['Guitar'], { stances: { [song.data.id]: 'in' } });
+  await call('/host/lineup', { method: 'POST', body: { songId: song.data.id }, host: true });
+  await call('/host/pick', {
+    method: 'POST',
+    body: { playerId: player.data.id, instrument: 'Guitar' },
+    host: true,
+  });
+  await call('/host/commit', { method: 'POST', host: true });
+
+  assert.equal((await call('/host/report')).status, 403);
+
+  const res = await fetch(`${base}/api/host/report`, {
+    headers: { 'x-host-token': hostKey },
+  });
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type') || '', /application\/pdf/);
+  assert.match(res.headers.get('content-disposition') || '', /Report-Jam.*\.pdf/i);
+
+  const buf = Buffer.from(await res.arrayBuffer());
+  assert.ok(buf.toString('utf8', 0, 5).startsWith('%PDF-'));
+  const text = buf.toString('utf8');
+  assert.ok(text.includes('Report Jam') || text.includes('Report'), 'jam name should appear');
+  assert.ok(text.includes('Reporter'));
+  assert.ok(text.includes('Report Song'));
+  assert.ok(!text.includes(player.data.token), 'player tokens must not appear in the PDF');
+  assert.ok(!text.includes(hostKey), 'host key must not appear in the PDF');
+});
+
 test('the host can export and restore a night backup', async () => {
   await clearNight();
   await call('/host/settings', { method: 'PATCH', body: { name: 'Backup Jam' }, host: true });
