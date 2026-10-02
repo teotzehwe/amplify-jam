@@ -60,22 +60,29 @@ export const tokens = {
 export async function api(path, { method = 'GET', body, as = 'auto' } = {}) {
   const sendHost = as !== 'player' && tokens.host;
   const sendPlayer = as !== 'host' && tokens.player;
-  const res = await fetch(`/api${path}`, {
-    method,
-    headers: {
-      ...(body ? { 'content-type': 'application/json' } : {}),
-      ...(sendHost ? { 'x-host-token': tokens.host } : {}),
-      ...(sendPlayer ? { 'x-player-token': tokens.player } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = new Error(data.error || `Request failed (${res.status})`);
-    err.status = res.status;
-    throw err;
+  // Compare-and-set races return 409 after server retries. A short client
+  // replay covers the whole-room-taps-at-once case without the musician
+  // needing to press again.
+  const attempts = method === 'GET' ? 1 : 4;
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    const res = await fetch(`/api${path}`, {
+      method,
+      headers: {
+        ...(body ? { 'content-type': 'application/json' } : {}),
+        ...(sendHost ? { 'x-host-token': tokens.host } : {}),
+        ...(sendPlayer ? { 'x-player-token': tokens.player } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) return data;
+    lastErr = new Error(data.error || `Request failed (${res.status})`);
+    lastErr.status = res.status;
+    if (res.status !== 409 || i === attempts - 1) throw lastErr;
+    await new Promise((r) => setTimeout(r, 40 * 2 ** i + Math.random() * 40));
   }
-  return data;
+  throw lastErr;
 }
 
 /**
