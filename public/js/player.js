@@ -1,7 +1,7 @@
 /* The musician's phone: sign up, say what you're comfortable with, see when you're up. */
 
 import {
-  $, api, approvedSongs, busy, confirmButton, el, guard, masthead, pendingSongs, pluralize, render,
+  $, api, approvedSongs, busy, confirmButton, declinedSongs, el, guard, masthead, pendingSongs, pluralize, render,
   shake, subscribe, toast, tokens,
 } from './common.js';
 
@@ -262,6 +262,45 @@ function pendingMine(you) {
   );
 }
 
+/** Host said no — keep the title so it does not look like the app lost it. */
+function declinedMine(you) {
+  const mine = declinedSongs(state).filter((s) => s.suggestedBy === you.id);
+  if (!mine.length) return null;
+
+  const dismiss = guard(busy(async (songId) => {
+    await api(`/songs/${songId}`, { method: 'DELETE', as: 'player' });
+    toast('Removed');
+    await refresh(true);
+  }, 'player-dismiss-declined'));
+
+  return el('section', { class: 'folio' },
+    el('div', { class: 'folio__rule' },
+      el('h2', {}, 'Not this time'),
+      el('span', { class: 'hint' }, pluralize(mine.length, 'request')),
+    ),
+    el('div', { class: 'stack' },
+      mine.map((song) =>
+        el('div', { class: 'signup-row' },
+          el('div', { class: 'grow' },
+            el('div', { class: 'song-row__title' }, song.title),
+            el('div', { class: 'song-row__meta' },
+              song.declineReason
+                ? `Host: ${song.declineReason}`
+                : 'The host passed on this one'),
+          ),
+          el('div', { class: 'row' },
+            el('span', { class: 'tag' }, 'Declined'),
+            el('button', {
+              class: 'btn btn--sm btn--quiet',
+              onClick: () => dismiss(song.id),
+            }, 'Dismiss'),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 /**
  * Suggest a song. No limit on how many — a jam runs on what the room wants
  * to play, and the host can still turn suggestions off or remove any of them.
@@ -439,6 +478,7 @@ function youView(you) {
     ),
 
     pendingMine(you),
+    declinedMine(you),
     state.jam.allowSuggestions ? suggestSong(you) : null,
 
     section('instruments', 'My Instruments',

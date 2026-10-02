@@ -656,8 +656,19 @@ function requests() {
     await refresh(true);
   }, 'host-approve'));
 
-  const decline = (song) => api(`/songs/${song.id}`, { method: 'DELETE' })
-    .then(() => toast('Declined'));
+  const decline = guard(busy(async (song) => {
+    const reason = window.prompt(
+      `Optional note for ${song.suggestedBy ? (playerById(song.suggestedBy)?.name || 'whoever asked') : 'whoever asked'} (Cancel leaves no note)`,
+      '',
+    );
+    // prompt Cancel → null: still decline, just without a reason.
+    await api(`/host/songs/${song.id}/decline`, {
+      method: 'POST',
+      body: { reason: reason == null ? '' : reason },
+    });
+    toast('Declined — they can see it on their phone');
+    await refresh(true);
+  }, 'host-decline'));
 
   return el('section', { class: 'card stack card--alert' },
     el('div', { class: 'card__head' },
@@ -679,7 +690,7 @@ function requests() {
             confirmButton({
               key: `decline-song:${song.id}`,
               label: 'Decline',
-              title: `Decline “${song.title}”? It disappears from the person who asked.`,
+              title: `Decline “${song.title}”? They will see it marked declined.`,
               onConfirm: () => decline(song),
               onChange: draw,
             }),
@@ -688,7 +699,7 @@ function requests() {
       }),
     ),
     el('p', { class: 'section-note' },
-      'Nobody can sign up for a request until you approve it. Declining removes it.'),
+      'Nobody can sign up for a request until you approve it. Declining leaves a note on their phone instead of vanishing.'),
   );
 }
 
