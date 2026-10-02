@@ -15,6 +15,8 @@ let tab = 'now';
 let songQuery = '';
 /** Held outside render so a live poll cannot wipe a half-typed add. */
 const songDraft = { title: '', artist: '' };
+/** Optional note while declining a request — survives the 2.5s poll redraw. */
+let declineDraft = null; // { songId, reason }
 let hostKeyDraft = '';
 let calloutOpen = false;
 let refresh = () => {};
@@ -651,7 +653,14 @@ function songsTab() {
  */
 function requests() {
   const waiting = pendingSongs(state);
-  if (!waiting.length) return null;
+  if (!waiting.length) {
+    declineDraft = null;
+    return null;
+  }
+  // Drop a draft if that request was approved/removed while we were typing.
+  if (declineDraft && !waiting.some((s) => s.id === declineDraft.songId)) {
+    declineDraft = null;
+  }
 
   const approve = guard(busy(async (song) => {
     await api(`/host/songs/${song.id}/approve`, { method: 'POST' });
@@ -659,19 +668,16 @@ function requests() {
     await refresh(true);
   }, 'host-approve'));
 
-  const decline = guard(busy(async (song) => {
-    const reason = window.prompt(
-      `Optional note for ${song.suggestedBy ? (playerById(song.suggestedBy)?.name || 'whoever asked') : 'whoever asked'} (Cancel leaves no note)`,
-      '',
-    );
-    // prompt Cancel → null: still decline, just without a reason.
+  // Per-song lock so one open note does not block declining another request.
+  const sendDecline = (song, reason) => guard(busy(async () => {
     await api(`/host/songs/${song.id}/decline`, {
       method: 'POST',
-      body: { reason: reason == null ? '' : reason },
+      body: { reason: reason || '' },
     });
+    declineDraft = null;
     toast('Declined — they can see it on their phone');
     await refresh(true);
-  }, 'host-decline'));
+  }, `host-decline:${song.id}`))();
 
   return el('section', { class: 'card stack card--alert' },
     el('div', { class: 'card__head' },
@@ -681,6 +687,7 @@ function requests() {
     el('div', { class: 'stack', style: { gap: '10px' } },
       waiting.map((song) => {
         const from = song.suggestedBy ? playerById(song.suggestedBy) : null;
+        const noting = declineDraft?.songId === song.id;
         return el('div', { class: 'song-card song-card--plain' },
           el('div', {},
             el('div', { class: 'song-card__title' }, song.title),
@@ -688,16 +695,48 @@ function requests() {
               [song.artist, song.key && `key of ${song.key}`, from && `asked for by ${from.name}`]
                 .filter(Boolean).join(' · ') || '—'),
           ),
-          el('div', { class: 'row row--wrap' },
-            el('button', { class: 'btn btn--primary btn--sm', onClick: () => approve(song) }, 'Approve'),
-            confirmButton({
-              key: `decline-song:${song.id}`,
-              label: 'Decline',
-              title: `Decline “${song.title}”? They will see it marked declined.`,
-              onConfirm: () => decline(song),
-              onChange: draw,
-            }),
-          ),
+          noting
+            ? el('div', { class: 'stack', style: { gap: '8px' } },
+              el('label', { class: 'field' },
+                el('span', { class: 'field__label' },
+                  `Optional note for ${from?.name || 'whoever asked'}`),
+                el('input', {
+                  id: `decline-reason-${song.id}`,
+                  type: 'text',
+                  maxLength: 200,
+                  placeholder: 'Already played this month…',
+                  value: declineDraft.reason,
+                  onInput: (e) => { declineDraft.reason = e.target.value; },
+                }),
+              ),
+              el('div', { class: 'row row--wrap' },
+                el('button', {
+                  class: 'btn btn--primary btn--sm',
+                  onClick: () => sendDecline(song, declineDraft.reason),
+                }, 'Send decline'),
+                el('button', {
+                  class: 'btn btn--sm',
+                  onClick: () => sendDecline(song, ''),
+                }, 'Decline without note'),
+                el('button', {
+                  class: 'btn btn--quiet btn--sm',
+                  onClick: () => { declineDraft = null; draw(); },
+                }, 'Cancel'),
+              ),
+            )
+            : el('div', { class: 'row row--wrap' },
+              el('button', { class: 'btn btn--primary btn--sm', onClick: () => approve(song) }, 'Approve'),
+              confirmButton({
+                key: `decline-song:${song.id}`,
+                label: 'Decline',
+                title: `Decline “${song.title}”? You can add a short note next.`,
+                onConfirm: () => {
+                  declineDraft = { songId: song.id, reason: '' };
+                  draw();
+                },
+                onChange: draw,
+              }),
+            ),
         );
       }),
     ),
