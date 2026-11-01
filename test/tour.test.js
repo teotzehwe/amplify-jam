@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it, beforeEach } from 'node:test';
 import {
+  adminTourSteps,
   clearTourSeen,
   hostTourSteps,
   markTourSeen,
@@ -26,11 +27,11 @@ describe('tour persistence', () => {
     assert.equal(tourSeen('player'), false);
   });
 
-  it('keeps host and player seen flags separate', () => {
+  it('keeps admin and player seen flags separate', () => {
     markTourSeen('player');
-    assert.equal(tourSeen('host'), false);
-    markTourSeen('host');
-    assert.equal(tourSeen('host'), true);
+    assert.equal(tourSeen('admin'), false);
+    markTourSeen('admin');
+    assert.equal(tourSeen('admin'), true);
   });
 });
 
@@ -64,17 +65,29 @@ describe('playerTourSteps', () => {
   });
 });
 
-describe('hostTourSteps', () => {
-  it('covers tabs, now, songs, share, and the hard rule', () => {
-    const steps = hostTourSteps();
+describe('adminTourSteps', () => {
+  it('walks the full admin dashboard across tabs', () => {
+    const steps = adminTourSteps();
+    assert.equal(hostTourSteps, adminTourSteps);
+
     const selectors = steps.map((s) => s.selector).filter(Boolean);
     assert.deepEqual(selectors, [
       '[data-tour="host-tabs"]',
+      '[data-tour="host-stage"]',
       '[data-tour="host-now"]',
-      '[data-tour="host-songs"]',
+      '[data-tour="host-roster"]',
+      '[data-tour="host-requests"]',
+      '[data-tour="host-setlist"]',
       '[data-tour="host-share"]',
+      '[data-tour="host-band"]',
+      '[data-tour="host-gates"]',
+      '[data-tour="host-ops"]',
     ]);
+
+    const tabs = [...new Set(steps.map((s) => s.tab).filter(Boolean))];
+    assert.deepEqual(tabs.sort(), ['now', 'roster', 'settings', 'songs']);
+    assert.ok(steps[0].title.toLowerCase().includes('admin'));
     assert.ok(steps.some((s) => /did not sign up/i.test(s.body)));
-    assert.ok(steps.some((s) => s.tab === 'settings'));
+    assert.ok(steps.some((s) => /backup/i.test(s.body)));
   });
 });

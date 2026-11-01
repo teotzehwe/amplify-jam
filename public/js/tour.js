@@ -7,8 +7,14 @@
 
 import { $, el, render } from './common.js';
 
-const VERSION = 1;
+const VERSION = 2;
 const storageKey = (id) => `amplify.tour.${id}.v${VERSION}`;
+
+const TOUR_KICKERS = {
+  player: 'Quick tour',
+  host: 'Admin tour',
+  admin: 'Admin tour',
+};
 
 /** @typedef {{
  *   title: string,
@@ -191,7 +197,7 @@ function paintTour() {
     'aria-describedby': 'tour-body',
   },
     el('div', { class: 'tour__meta' },
-      el('span', { class: 'tour__kicker' }, 'Quick tour'),
+      el('span', { class: 'tour__kicker' }, TOUR_KICKERS[active.id] || 'Tour'),
       el('span', { class: 'tour__progress', 'aria-hidden': 'true' }, `${active.step + 1} / ${n}`),
     ),
     el('h2', { id: 'tour-title', class: 'tour__title' }, step.title),
@@ -273,11 +279,23 @@ function placeCard(card, rect) {
     top = Math.max(pad, (vh - ch) / 2);
     left = Math.max(pad, (vw - cw) / 2);
   } else {
+    // Prefer below the target; if the hole is huge (or near the fold), pin the
+    // card to the lower third of the viewport so Next stays clickable.
     const below = rect.bottom + 14;
     const above = rect.top - ch - 14;
-    top = below + ch + pad < vh ? below : Math.max(pad, above);
+    if (rect.height > vh * 0.45) {
+      top = Math.max(pad, vh - ch - pad);
+    } else if (below + ch + pad < vh) {
+      top = below;
+    } else {
+      top = Math.max(pad, above);
+    }
     left = Math.min(Math.max(pad, rect.left), vw - cw - pad);
   }
+
+  // Final clamp — never leave Next under the fold.
+  top = Math.min(Math.max(pad, top), Math.max(pad, vh - ch - pad));
+  left = Math.min(Math.max(pad, left), Math.max(pad, vw - cw - pad));
 
   card.style.top = `${Math.round(top)}px`;
   card.style.left = `${Math.round(left)}px`;
@@ -344,40 +362,82 @@ export function playerTourSteps(ctx) {
   ];
 }
 
-/** Host console (`/host`). Needs bindTourHost({ setTab }) for tab steps. */
-export function hostTourSteps() {
+/**
+ * Admin dashboard tour for the host console (`/host`).
+ * Needs bindTourHost({ setTab }) so tab-scoped steps can find their targets.
+ */
+export function adminTourSteps() {
   return [
     {
-      title: 'Host console',
-      body: 'You run the night from here: vet requests, put a song on deck, tap names onto chairs, call it out, and log it.',
+      title: 'Admin dashboard',
+      body: 'This console runs the night: share the join link, vet requests, staff each song by hand, call it out, and back up the sheet.',
     },
     {
       title: 'Four tabs',
-      body: 'Now is the live song. Roster is who’s here and how many turns they’ve had. Songs is the setlist and waiting requests. Settings has the QR for the room.',
+      body: 'Now is the live song. Roster is fairness at a glance. Songs is the setlist and waiting requests. Settings is share, band, backups, and start-over.',
       selector: '[data-tour="host-tabs"]',
       tab: 'now',
     },
     {
-      title: 'Put a song on deck',
-      body: 'Pick a title, then tap musicians who signed up for it. Coverage numbers are advice — empty chairs stay empty if nobody signed up.',
+      title: 'Stage display',
+      body: 'Open the TV view in another window. It shows Now, Next, the sheet, and the same sign-up QR between songs.',
+      selector: '[data-tour="host-stage"]',
+      tab: 'now',
+    },
+    {
+      title: 'Run the live song',
+      body: 'Put a title on deck, tap musicians who signed up, call it out fullscreen, then Played to log turns — or Cancel to clear the deck.',
       selector: '[data-tour="host-now"]',
       tab: 'now',
     },
     {
-      title: 'Approve song requests',
-      body: 'Room suggestions wait here until you approve them. Until then, nobody can sign up for that title.',
-      selector: '[data-tour="host-songs"]',
+      title: 'Roster & fairness',
+      body: 'Longest wait first. Turns, last played, and on-a-break flags inform you — they never block a pick. Fairness stays a human job.',
+      selector: '[data-tour="host-roster"]',
+      tab: 'roster',
+    },
+    {
+      title: 'Song requests',
+      body: 'Room suggestions wait here until you approve them. Until then, nobody can sign up for that title — enforced on the server, not just hidden in the UI.',
+      selector: '[data-tour="host-requests"]',
+      tab: 'songs',
+    },
+    {
+      title: 'Build the setlist',
+      body: 'Add songs yourself, reorder with the arrows, or Play next to jump one to the front. Up next is derived — not a stored pointer.',
+      selector: '[data-tour="host-setlist"]',
       tab: 'songs',
     },
     {
       title: 'Share the sign-up',
-      body: 'Show this QR (or print it) so phones can join. Keep the host link to yourself — it carries the key.',
+      body: 'Show this QR (or print it) so phones can join. Keep the host link to yourself — it carries the key that unlocks this dashboard.',
       selector: '[data-tour="host-share"]',
       tab: 'settings',
     },
     {
+      title: 'The band template',
+      body: 'Chairs you usually want filled (two guitars, bass, drums…). A readout on the sheet, not a hard limit — empty chairs stay empty if nobody signed up.',
+      selector: '[data-tour="host-band"]',
+      tab: 'settings',
+    },
+    {
+      title: 'Request gates',
+      body: 'Turn room requests on or off, and require approval before titles hit the setlist. Switching approval off lets through anything already waiting.',
+      selector: '[data-tour="host-gates"]',
+      tab: 'settings',
+    },
+    {
+      title: 'Reports & backups',
+      body: 'Session PDF is shareable (no tokens). Night backup includes session tokens — treat it like a password. Download one before Clear the night; there is no undo.',
+      selector: '[data-tour="host-ops"]',
+      tab: 'settings',
+    },
+    {
       title: 'The hard rule',
-      body: 'Nobody is called for a song they did not sign up for. Amplify refuses any pick that is not on the sheet — even if you try.',
+      body: 'Nobody is called for a song they did not sign up for. The API refuses any pick that is not on the sheet — even if you try from this console.',
     },
   ];
 }
+
+/** @deprecated Use adminTourSteps — kept as an alias for older imports/tests. */
+export const hostTourSteps = adminTourSteps;
