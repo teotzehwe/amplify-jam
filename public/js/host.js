@@ -5,9 +5,13 @@ import {
   playedSongIds, pluralize, render, shake, signupsFor, subscribe, toast, tokens, upNext,
 } from './common.js';
 import { qrSvg } from './qr.js';
+import {
+  bindTourHost, hostTourSteps, startTour, syncTour, tourButton, tourSeen,
+} from './tour.js';
 
 const app = $('#app');
 const overlayRoot = $('#overlay');
+const HOST_TOUR = 'host';
 
 let state = null;
 let authed = false;
@@ -36,6 +40,15 @@ let refresh = () => {};
       .then(() => true)
       .catch(() => false);
   }
+  bindTourHost({
+    setTab: (id) => {
+      if (tab === id) return false;
+      tab = id;
+      return true;
+    },
+    paint: () => draw(),
+  });
+
   refresh = subscribe((next) => {
     state = next;
     draw();
@@ -44,25 +57,37 @@ let refresh = () => {};
 
 function draw() {
   if (!state) return;
-  const active = document.activeElement;
-  const focusId = active?.id || null;
-  const caret = active && 'selectionStart' in active ? active.selectionStart : null;
+  const activeEl = document.activeElement;
+  const focusId = activeEl?.id || null;
+  const caret = activeEl && 'selectionStart' in activeEl ? activeEl.selectionStart : null;
+  // Don't steal focus from the tour dialog on live redraws.
+  const tourOwnsFocus = Boolean(activeEl?.closest?.('#tour-root'));
 
   render(app, authed ? console_() : gate());
   render(overlayRoot, calloutOpen && state.current ? callout(state.current, { closable: true }) : null);
 
   // First paint gets entrance motion; subsequent live rebuilds stay still.
   if (!app.classList.contains('is-live')) {
-    requestAnimationFrame(() => app.classList.add('is-live'));
+    requestAnimationFrame(() => {
+      app.classList.add('is-live');
+      maybeStartHostTour();
+    });
   }
 
-  if (!focusId) return;
+  syncTour();
+
+  if (tourOwnsFocus || !focusId) return;
   const restored = document.getElementById(focusId);
   if (!restored) return;
   restored.focus({ preventScroll: true });
   if (caret != null && restored.setSelectionRange) {
     try { restored.setSelectionRange(caret, caret); } catch { /* not a text field */ }
   }
+}
+
+function maybeStartHostTour() {
+  if (!authed || tourSeen(HOST_TOUR)) return;
+  startTour(HOST_TOUR, hostTourSteps());
 }
 
 /* -------------------------------------------------------------------- gate */
@@ -118,10 +143,16 @@ function console_() {
 
   return el('div', { class: 'stack stack--lg' },
     masthead(state.jam.name, `${pluralize(state.roundIndex, 'song')} played · ${present} here now`,
+      tourButton(HOST_TOUR, hostTourSteps),
       el('a', { class: 'btn btn--ghost btn--sm', href: '/board', target: '_blank' }, 'Stage display ↗'),
     ),
 
-    el('nav', { class: 'tabs', role: 'tablist', 'aria-label': 'Console sections' },
+    el('nav', {
+      class: 'tabs',
+      role: 'tablist',
+      'aria-label': 'Console sections',
+      dataset: { tour: 'host-tabs' },
+    },
       TABS.map(([id, label]) =>
         el('button', {
           role: 'tab',
@@ -145,7 +176,14 @@ function console_() {
       ),
     ),
 
-    el('div', { role: 'tabpanel', id: `panel-${tab}`, 'aria-labelledby': `tab-${tab}` },
+    el('div', {
+      role: 'tabpanel',
+      id: `panel-${tab}`,
+      'aria-labelledby': `tab-${tab}`,
+      ...(tab === 'now' || tab === 'songs'
+        ? { dataset: { tour: tab === 'now' ? 'host-now' : 'host-songs' } }
+        : {}),
+    },
       tab === 'now' ? nowTab() : null,
       tab === 'roster' ? rosterTab() : null,
       tab === 'songs' ? songsTab() : null,
@@ -837,7 +875,7 @@ function settingsTab() {
   };
 
   return el('div', { class: 'stack' },
-    el('section', { class: 'card' },
+    el('section', { class: 'card', dataset: { tour: 'host-share' } },
       el('div', { class: 'card__head' },
         el('h2', {}, 'Share the sign-up'),
         el('span', { class: 'hint' }, 'Point a phone camera at the code'),
