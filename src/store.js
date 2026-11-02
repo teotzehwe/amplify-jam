@@ -89,6 +89,7 @@ export function migrate(state, hostKey) {
     passwordHash: u.passwordHash || '',
     passwordSalt: u.passwordSalt || '',
     instruments: Array.isArray(u.instruments) ? u.instruments : [],
+    role: u.role === 'admin' ? 'admin' : 'player',
     disabled: Boolean(u.disabled),
     createdAt: u.createdAt || Date.now(),
   })).filter((u) => u.id && u.username && u.passwordHash && u.passwordSalt);
@@ -348,12 +349,15 @@ export class Store {
     // lastHostExportAt is a server-side gate for clearing the night — not for phones.
     // users stay server-side except via /api/host/users (hashes never leave).
     const { hostToken, lastHostExportAt, users, ...rest } = this.state;
+    const active = Array.isArray(users) ? users.filter((u) => !u.disabled) : [];
     return {
       ...rest,
       version: this.version,
       players: rest.players.filter((p) => !p.removed).map(({ token, ...p }) => p),
       // Phones only need to know accounts exist so the sign-in form can show.
-      hasUsers: Array.isArray(users) && users.some((u) => !u.disabled),
+      hasUsers: active.length > 0,
+      // Host console shows first-admin setup until someone can sign in there.
+      needsHostSetup: !active.some((u) => u.role === 'admin'),
     };
   }
 
@@ -374,6 +378,14 @@ export class Store {
 
   userById(id) {
     return (this.state.users || []).find((u) => u.id === id) || null;
+  }
+
+  adminUsers() {
+    return (this.state.users || []).filter((u) => u.role === 'admin' && !u.disabled);
+  }
+
+  hasAdmins() {
+    return this.adminUsers().length > 0;
   }
 }
 

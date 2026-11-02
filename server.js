@@ -24,20 +24,27 @@ function lanAddress() {
 const server = createServer(handleRequest);
 
 server.listen(PORT, async () => {
-  const { key, name } = await store.run(() => {
-    // Nothing stored yet: persist now so the host key survives a restart.
+  const { key, name, needsSetup } = await store.run(() => {
+    // Nothing stored yet: persist now so the night survives a restart.
     if (store.version === 0) store.touch();
-    return { key: store.state.hostToken, name: store.state.jam.name };
+    return {
+      key: store.state.hostToken,
+      name: store.state.jam.name,
+      needsSetup: !store.hasAdmins(),
+    };
   });
   const host = lanAddress();
   console.log(`
   \u266a  Amplify \u2014 ${name}
 
      Players sign up   http://${host}:${PORT}/
-     Host console      http://${host}:${PORT}/host?k=${key}
+     Host console      http://${host}:${PORT}/host
      Stage display     http://${host}:${PORT}/board
 
+     ${needsSetup
+    ? 'Open the host console and create the first admin account.'
+    : 'Admins sign in on /host with their username and password.'}
+     Share the sign-up link with the room; keep the host console to yourself.
      Host key: ${key}
-     Share the sign-up link; keep the host link to yourself.
 `);
 });

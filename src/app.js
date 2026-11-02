@@ -346,12 +346,14 @@ function clearLoginFailures(ip, username) {
 }
 
 /**
- * Sign in with a host-created account. Resumes tonight's player seat for that
- * user (or opens a fresh one) and rotates the session token.
+ * Shared password check with throttle + dummy-hash timing.
+ * Returns the user when credentials match an enabled account.
+ * Pass `roles` (e.g. ['admin']) to require a role without revealing why a
+ * valid musician password still fails host sign-in.
  */
-route('POST', /^\/api\/auth\/login$/, async (ctx) => {
-  const username = parseUsername(ctx.body.username);
-  const password = String(ctx.body.password ?? '');
+async function authenticateAccount(ctx, usernameRaw, passwordRaw, { roles = null } = {}) {
+  const username = parseUsername(usernameRaw);
+  const password = String(passwordRaw ?? '');
   const ip = clientIp(ctx);
   beginLoginAttempt(ip, username);
 
@@ -361,11 +363,37 @@ route('POST', /^\/api\/auth\/login$/, async (ctx) => {
   const salt = user?.passwordSalt || DUMMY_CREDENTIAL.salt;
   const hash = user?.passwordHash || DUMMY_CREDENTIAL.hash;
   const passwordOk = await verifyPasswordAsync(password, salt, hash);
-  if (!user || user.disabled || !passwordOk) {
+  const roleOk = !roles || (user && roles.includes(user.role));
+  if (!user || user.disabled || !passwordOk || !roleOk) {
     finishLoginFailure(ip, username);
     throw new HttpError(401, 'Username or password is wrong');
   }
   clearLoginFailures(ip, username);
+  return user;
+}
+
+function parseRole(value, fallback = 'player') {
+  if (value == null || value === '') return fallback;
+  const role = String(value).toLowerCase();
+  if (role !== 'admin' && role !== 'player') throw bad('Role must be admin or player');
+  return role;
+}
+
+function assertNotLastAdmin(user, { removing = false, demoting = false, disabling = false } = {}) {
+  if (user.role !== 'admin' || user.disabled) return;
+  const others = store.adminUsers().filter((u) => u.id !== user.id);
+  if (others.length > 0) return;
+  if (removing) throw bad('Create another admin before removing this one');
+  if (demoting) throw bad('Create another admin before demoting this one');
+  if (disabling) throw bad('Create another admin before disabling this one');
+}
+
+/**
+ * Sign in with a host-created account. Resumes tonight's player seat for that
+ * user (or opens a fresh one) and rotates the session token.
+ */
+route('POST', /^\/api\/auth\/login$/, async (ctx) => {
+  const user = await authenticateAccount(ctx, ctx.body.username, ctx.body.password);
 
   let playerId;
   let token;
@@ -401,6 +429,56 @@ route('POST', /^\/api\/auth\/login$/, async (ctx) => {
   return { id: playerId, token, userId: user.id, username: user.username };
 });
 
+/**
+ * First-time host setup: create the initial admin when none exist yet.
+ * No host token required — this is how the console gets its first owner.
+ */
+route('POST', /^\/api\/host\/setup$/, (ctx) => {
+  if (store.hasAdmins()) {
+    throw bad('An admin account already exists — sign in instead');
+  }
+  const username = parseUsername(ctx.body.username);
+  if (store.userByUsername(username)) throw bad('That username is already taken');
+  const displayName = str(ctx.body.displayName || username, { max: 60, field: 'Display name', required: true });
+  const password = parseNewPassword(ctx.body.password);
+  const { salt, hash } = hashPassword(password);
+  const user = {
+    id: newId('usr'),
+    username,
+    displayName,
+    passwordHash: hash,
+    passwordSalt: salt,
+    instruments: [],
+    role: 'admin',
+    disabled: false,
+    createdAt: Date.now(),
+  };
+  store.update((state) => {
+    if (!Array.isArray(state.users)) state.users = [];
+    state.users.push(user);
+  });
+  return {
+    token: store.state.hostToken,
+    user: publicUser(user),
+  };
+});
+
+/**
+ * Admin sign-in for the host console. Returns the night's host session token
+ * so the existing x-host-token API keeps working after password login.
+ */
+route('POST', /^\/api\/host\/login$/, async (ctx) => {
+  const user = await authenticateAccount(ctx, ctx.body.username, ctx.body.password, {
+    roles: ['admin'],
+  });
+  return {
+    token: store.state.hostToken,
+    username: user.username,
+    displayName: user.displayName,
+    userId: user.id,
+  };
+});
+
 route('GET', /^\/api\/host\/users$/, (ctx) => {
   requireHost(ctx);
   return {
@@ -414,6 +492,7 @@ route('POST', /^\/api\/host\/users$/, (ctx) => {
   if (store.userByUsername(username)) throw bad('That username is already taken');
   const displayName = str(ctx.body.displayName || username, { max: 60, field: 'Display name', required: true });
   const password = parseNewPassword(ctx.body.password);
+  const role = parseRole(ctx.body.role, 'player');
   const instruments = ctx.body.instruments != null
     ? parseInstruments(ctx.body.instruments)
     : [];
@@ -425,6 +504,7 @@ route('POST', /^\/api\/host\/users$/, (ctx) => {
     passwordHash: hash,
     passwordSalt: salt,
     instruments,
+    role,
     disabled: false,
     createdAt: Date.now(),
   };
@@ -447,13 +527,21 @@ route('PATCH', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
     if (clash && clash.id !== user.id) throw bad('That username is already taken');
   }
 
+  const nextRole = body.role != null ? parseRole(body.role, user.role) : user.role;
+  const nextDisabled = body.disabled != null ? Boolean(body.disabled) : user.disabled;
+  assertNotLastAdmin(user, {
+    demoting: user.role === 'admin' && nextRole !== 'admin',
+    disabling: !user.disabled && nextDisabled,
+  });
+
   store.update(() => {
     if (body.username != null) user.username = parseUsername(body.username);
     if (body.displayName != null) {
       user.displayName = str(body.displayName, { max: 60, field: 'Display name', required: true });
     }
     if (body.instruments != null) user.instruments = parseInstruments(body.instruments);
-    if (body.disabled != null) user.disabled = Boolean(body.disabled);
+    if (body.role != null) user.role = nextRole;
+    if (body.disabled != null) user.disabled = nextDisabled;
     if (body.password != null && body.password !== '') {
       const { salt, hash } = hashPassword(parseNewPassword(body.password));
       user.passwordSalt = salt;
@@ -467,6 +555,7 @@ route('DELETE', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
   requireHost(ctx);
   const user = store.userById(ctx.params[0]);
   if (!user) throw new HttpError(404, 'User not found');
+  assertNotLastAdmin(user, { removing: true });
   store.update((state) => {
     state.users = (state.users || []).filter((u) => u.id !== user.id);
     // Keep tonight's roster rows; just unlink the account.

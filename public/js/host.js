@@ -21,7 +21,8 @@ let songQuery = '';
 const songDraft = { title: '', artist: '' };
 /** Optional note while declining a request — survives the 2.5s poll redraw. */
 let declineDraft = null; // { songId, reason }
-let hostKeyDraft = '';
+/** Admin sign-in / first-admin setup drafts for the host gate. */
+const gateDraft = { username: '', displayName: '', password: '' };
 let calloutOpen = false;
 let refresh = () => {};
 
@@ -32,7 +33,7 @@ let usersLoaded = false;
 let usersLoading = null;
 /** After a failed fetch, wait for an explicit retry (re-enter tab / force). */
 let usersLoadFailed = false;
-const userDraft = { username: '', displayName: '', password: '' };
+const userDraft = { username: '', displayName: '', password: '', admin: false };
 /** Optional password reset field keyed by user id. */
 const passwordResets = new Map();
 
@@ -61,17 +62,20 @@ async function loadUsers({ force = false } = {}) {
 /* -------------------------------------------------------------------- boot */
 
 (async function boot() {
+  // Strip legacy ?k= host-key links from the address bar; admins sign in with
+  // username/password now. A leftover localStorage token still unlocks if valid.
   const url = new URL(location.href);
-  const fromLink = url.searchParams.get('k');
-  if (fromLink) {
-    tokens.host = fromLink;
-    history.replaceState({}, '', '/host'); // keep the key out of the address bar
+  if (url.searchParams.has('k')) {
+    history.replaceState({}, '', '/host');
   }
 
   if (tokens.host) {
     authed = await api('/host/auth', { method: 'POST', body: { token: tokens.host } })
       .then(() => true)
-      .catch(() => false);
+      .catch(() => {
+        tokens.host = '';
+        return false;
+      });
   }
   if (authed) {
     loadUsers().catch(() => {});
@@ -129,39 +133,112 @@ function maybeStartHostTour() {
 
 /* -------------------------------------------------------------------- gate */
 
+function enterConsole(token) {
+  tokens.host = token;
+  authed = true;
+  usersLoaded = false;
+  gateDraft.username = '';
+  gateDraft.displayName = '';
+  gateDraft.password = '';
+  loadUsers().catch(() => {});
+  refresh(true);
+}
+
 function gate() {
-  const submit = guard(busy(async () => {
-    const key = hostKeyDraft.trim() || $('#hostkey')?.value.trim();
-    if (!key) {
-      shake($('#hostkey')?.closest('.field') || $('#hostkey'));
-      return toast('Paste the host key first', 'error');
+  const needsSetup = Boolean(state?.needsHostSetup);
+
+  const signIn = guard(busy(async () => {
+    const username = gateDraft.username.trim() || $('#gate-username')?.value.trim();
+    const password = gateDraft.password || $('#gate-password')?.value || '';
+    if (!username) {
+      shake($('#gate-username')?.closest('.field') || $('#gate-username'));
+      return toast('Enter your username', 'error');
     }
-    await api('/host/auth', { method: 'POST', body: { token: key } });
-    tokens.host = key;
-    authed = true;
-    usersLoaded = false;
-    loadUsers().catch(() => {});
-    refresh(true);
-  }));
+    if (!password) {
+      shake($('#gate-password')?.closest('.field') || $('#gate-password'));
+      return toast('Enter your password', 'error');
+    }
+    const data = await api('/host/login', {
+      method: 'POST',
+      body: { username, password },
+      as: 'player',
+    });
+    enterConsole(data.token);
+  }, 'host-gate-login'));
+
+  const createAdmin = guard(busy(async () => {
+    const username = gateDraft.username.trim() || $('#gate-username')?.value.trim();
+    const displayName = gateDraft.displayName.trim() || $('#gate-displayname')?.value.trim() || username;
+    const password = gateDraft.password || $('#gate-password')?.value || '';
+    if (!username) {
+      shake($('#gate-username')?.closest('.field') || $('#gate-username'));
+      return toast('Pick a username', 'error');
+    }
+    if (!password || password.length < 6) {
+      shake($('#gate-password')?.closest('.field') || $('#gate-password'));
+      return toast('Password needs at least 6 characters', 'error');
+    }
+    const data = await api('/host/setup', {
+      method: 'POST',
+      body: { username, displayName, password },
+      as: 'player',
+    });
+    toast('Admin account created');
+    enterConsole(data.token);
+  }, 'host-gate-setup'));
 
   return el('div', { class: 'gate stack stack--lg' },
     masthead('Amplify', 'Host console'),
     el('section', { class: 'card stack' },
+      el('div', { class: 'card__head' },
+        el('h2', {}, needsSetup ? 'Create the first admin' : 'Admin sign-in'),
+        el('span', { class: 'hint' }, needsSetup ? 'One-time setup' : 'Host console'),
+      ),
+      el('p', { class: 'section-note' },
+        needsSetup
+          ? 'This night has no admin yet. Create one to open the console — you will use this username and password next time.'
+          : 'Sign in with an admin account. Musician passwords on the phone do not unlock this console unless that account is marked Admin.'),
       el('div', { class: 'field' },
-        el('label', { for: 'hostkey' }, 'Host key'),
+        el('label', { for: 'gate-username' }, 'Username'),
         el('input', {
-          id: 'hostkey',
+          id: 'gate-username',
           type: 'text',
-          class: 'mono',
-          placeholder: 'Paste the key from the terminal',
-          value: hostKeyDraft,
-          onInput: (e) => { hostKeyDraft = e.target.value; },
-          onKeydown: (e) => e.key === 'Enter' && submit(e),
+          autocomplete: 'username',
+          spellcheck: 'false',
+          maxLength: 32,
+          value: gateDraft.username,
+          onInput: (e) => { gateDraft.username = e.target.value; },
         }),
       ),
-      el('button', { class: 'btn btn--primary btn--block', onClick: submit }, 'Unlock console'),
-      el('p', { class: 'section-note' },
-        'The server prints this key — and a ready-made link — when it starts up.'),
+      needsSetup
+        ? el('div', { class: 'field' },
+            el('label', { for: 'gate-displayname' }, 'Display name'),
+            el('input', {
+              id: 'gate-displayname',
+              type: 'text',
+              maxLength: 60,
+              placeholder: 'Optional',
+              value: gateDraft.displayName,
+              onInput: (e) => { gateDraft.displayName = e.target.value; },
+            }),
+          )
+        : null,
+      el('div', { class: 'field' },
+        el('label', { for: 'gate-password' }, 'Password'),
+        el('input', {
+          id: 'gate-password',
+          type: 'password',
+          autocomplete: needsSetup ? 'new-password' : 'current-password',
+          maxLength: 72,
+          value: gateDraft.password,
+          onInput: (e) => { gateDraft.password = e.target.value; },
+          onKeydown: (e) => e.key === 'Enter' && (needsSetup ? createAdmin(e) : signIn(e)),
+        }),
+      ),
+      el('button', {
+        class: 'btn btn--primary btn--block',
+        onClick: needsSetup ? createAdmin : signIn,
+      }, needsSetup ? 'Create admin & open console' : 'Sign in'),
     ),
   );
 }
@@ -938,18 +1015,23 @@ function usersTab() {
       shake($('#user-password')?.closest('.field') || $('#user-password'));
       return toast('Password needs at least 6 characters', 'error');
     }
+    const asAdmin = Boolean(userDraft.admin);
     await api('/host/users', {
       method: 'POST',
       body: {
         username: userDraft.username.trim(),
         displayName: userDraft.displayName.trim() || userDraft.username.trim(),
         password: userDraft.password,
+        role: asAdmin ? 'admin' : 'player',
       },
     });
     userDraft.username = '';
     userDraft.displayName = '';
     userDraft.password = '';
-    toast('Account created — they can sign in on their phone');
+    userDraft.admin = false;
+    toast(asAdmin
+      ? 'Admin created — they can open this console'
+      : 'Account created — they can sign in on their phone');
     await loadUsers({ force: true });
     draw();
   }, 'host-add-user'));
@@ -961,7 +1043,7 @@ function usersTab() {
         el('span', { class: 'hint' }, 'Password sign-in for the room'),
       ),
       el('p', { class: 'section-note' },
-        'Accounts outlast a single night. Someone signs in with their username and password, and their seat on tonight’s roster comes back with them.'),
+        'Accounts outlast a single night. Musicians sign in on their phone; admins can also open this host console.'),
       el('div', { class: 'field' },
         el('label', { for: 'user-username' }, 'Username'),
         el('input', {
@@ -998,6 +1080,14 @@ function usersTab() {
           onInput: (e) => { userDraft.password = e.target.value; },
           onKeydown: (e) => e.key === 'Enter' && add(e),
         }),
+      ),
+      el('label', { class: 'choice', style: { marginTop: '4px' } },
+        el('input', {
+          type: 'checkbox',
+          checked: userDraft.admin,
+          onChange: (e) => { userDraft.admin = e.target.checked; draw(); },
+        }),
+        el('span', {}, 'Admin — can sign in to this host console'),
       ),
       el('button', { class: 'btn btn--primary', onClick: add }, 'Create account'),
     ),
@@ -1046,11 +1136,14 @@ function userCard(user) {
     draw();
   }, `host-user-${user.id}`));
 
+  const isAdmin = user.role === 'admin';
+
   return el('div', { class: `person${user.disabled ? ' person--away' : ''}` },
     el('div', { class: 'person__top' },
       el('span', { class: `dot dot--${user.disabled ? 'out' : 'in'}` }),
       el('span', { class: 'person__name grow truncate' }, user.displayName || user.username),
       el('span', { class: 'tag mono' }, user.username),
+      isAdmin ? el('span', { class: 'tag tag--in' }, 'Admin') : null,
       signedIn ? el('span', { class: 'tag tag--in' }, 'Here now') : null,
       user.disabled ? el('span', { class: 'tag' }, 'Disabled') : null,
     ),
@@ -1072,6 +1165,10 @@ function userCard(user) {
       }, 'Reset password'),
     ),
     el('div', { class: 'row row--wrap', style: { marginTop: '8px', gap: '8px' } },
+      el('button', {
+        class: 'btn btn--sm btn--ghost',
+        onClick: () => save({ role: isAdmin ? 'player' : 'admin' }),
+      }, isAdmin ? 'Remove admin' : 'Make admin'),
       el('button', {
         class: 'btn btn--sm btn--ghost',
         onClick: () => save({ disabled: !user.disabled }),
@@ -1296,7 +1393,7 @@ function downloadJson(filename, data) {
 
 /** Fetch the host session PDF and trigger a browser download (not via api()). */
 async function downloadSessionReport() {
-  if (!tokens.host) throw new Error('Host key required');
+  if (!tokens.host) throw new Error('Sign in to the host console first');
   const res = await fetch('/api/host/report', {
     headers: { 'x-host-token': tokens.host },
   });

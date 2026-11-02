@@ -717,13 +717,38 @@ test('import refuses backups with incomplete players or unknown song status', as
   assert.ok(!data.songs.some((s) => s.status === 'mystery'));
 });
 
-test('the host can create users and they can sign in with a password', async () => {
+test('admins set up the host console and musicians sign in on the phone', async () => {
   const before = await call('/state');
   assert.equal(before.data.hasUsers, false);
+  assert.equal(before.data.needsHostSetup, true);
 
   assert.equal((await call('/host/users', { method: 'POST', body: {
     username: 'alex', displayName: 'Alex', password: 'secret1',
   } })).status, 403);
+
+  // First admin — no host token required.
+  const setup = await call('/host/setup', {
+    method: 'POST',
+    body: { username: 'boss', displayName: 'Boss', password: 'secret1' },
+  });
+  assert.equal(setup.status, 200);
+  assert.ok(setup.data.token);
+  assert.equal(setup.data.user.role, 'admin');
+  assert.equal(setup.data.user.passwordHash, undefined);
+  assert.equal((await call('/state')).data.needsHostSetup, false);
+
+  // Setup only works once.
+  assert.equal((await call('/host/setup', {
+    method: 'POST',
+    body: { username: 'other', displayName: 'Other', password: 'secret1' },
+  })).status, 400);
+
+  const hostLogin = await call('/host/login', {
+    method: 'POST',
+    body: { username: 'boss', password: 'secret1' },
+  });
+  assert.equal(hostLogin.status, 200);
+  assert.equal(hostLogin.data.token, setup.data.token);
 
   const created = await call('/host/users', {
     method: 'POST',
@@ -732,7 +757,13 @@ test('the host can create users and they can sign in with a password', async () 
   });
   assert.equal(created.status, 200);
   assert.equal(created.data.user.username, 'alex');
+  assert.equal(created.data.user.role, 'player');
   assert.equal(created.data.user.passwordHash, undefined);
+
+  // Musician passwords do not unlock the host console.
+  assert.equal((await call('/host/login', {
+    method: 'POST', body: { username: 'alex', password: 'secret1' },
+  })).status, 401);
 
   const listed = await call('/host/users', { host: true });
   assert.ok(listed.data.users.some((u) => u.username === 'alex'));
@@ -767,6 +798,10 @@ test('the host can create users and they can sign in with a password', async () 
   assert.notEqual(again.data.token, login.data.token);
   assert.equal((await call('/state', { player: login.data.token })).data.youId, null);
   assert.equal((await call('/state', { player: again.data.token })).data.youId, login.data.id);
+
+  // Cannot remove the last admin.
+  const boss = listed.data.users.find((u) => u.username === 'boss');
+  assert.equal((await call(`/host/users/${boss.id}`, { method: 'DELETE', host: true })).status, 400);
 });
 
 test('clearing the night keeps registered users', async () => {
