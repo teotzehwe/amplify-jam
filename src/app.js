@@ -12,6 +12,7 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { openStore, newId, DEFAULT_INSTRUMENTS, migrate } from './store.js';
+import { supabaseUsersConfigured } from './supabase-users.js';
 import { commitRound, instrumentFor, mayPlay, signupsFor, STANCES, LEVELS } from './signups.js';
 import { buildPdf } from './pdf.js';
 import { buildSessionReport } from './report.js';
@@ -1150,6 +1151,7 @@ export async function handleRequest(req, res) {
         realtime: store.realtime,
         hasKv,
         hasHostKey: Boolean(process.env.HOST_KEY),
+        hasSupabaseUsers: supabaseUsersConfigured(),
         vercel: Boolean(process.env.VERCEL),
       });
     }

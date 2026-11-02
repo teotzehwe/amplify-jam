@@ -17,6 +17,8 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import { openSupabaseUsers, UsersSyncedBackend } from './supabase-users.js';
+
 export const DEFAULT_INSTRUMENTS = [
   'Vocals', 'Guitar', 'Bass', 'Drums', 'Keys', 'Sax', 'Trumpet',
   'Violin', 'Harmonica', 'Percussion', 'Flute', 'Cello', 'Banjo', 'Ukulele',
@@ -418,16 +420,26 @@ export class Store {
  * Pick a backend from the environment: a hosted key-value store when one is
  * configured, otherwise a local file. Vercel's Redis integration and Upstash
  * use different variable names for the same pair, so both are accepted.
+ *
+ * When SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are set, registered accounts
+ * are dual-written to a Supabase table (see supabase/schema.sql) so they
+ * survive a Redis wipe. Songs and tonight's roster stay in the night blob.
  */
 export function openStore({ dataDir, env = process.env } = {}) {
   const url = env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL;
   const token = env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN;
   const hostKey = env.HOST_KEY || '';
 
+  let backend;
   if (url && token) {
-    return new Store(new KvBackend(url, token, env.KV_PREFIX || 'amplify', hostKey));
+    backend = new KvBackend(url, token, env.KV_PREFIX || 'amplify', hostKey);
+  } else {
+    const dir = dataDir || env.DATA_DIR || join(process.cwd(), 'data');
+    backend = new FileBackend(join(dir, 'jam.json'), hostKey);
   }
 
-  const dir = dataDir || env.DATA_DIR || join(process.cwd(), 'data');
-  return new Store(new FileBackend(join(dir, 'jam.json'), hostKey));
+  const remoteUsers = openSupabaseUsers(env);
+  if (remoteUsers) backend = new UsersSyncedBackend(backend, remoteUsers);
+
+  return new Store(backend);
 }

@@ -193,6 +193,26 @@ gitignored; do not commit or share it. The public API never returns either: the
 host key stays server-side, and player tokens are stripped from published state
 so one phone cannot act as another.
 
+### Optional: store accounts in Supabase
+
+Registered sign-in accounts (username, scrypt hash, role) can dual-write to
+Supabase Postgres so they survive a Redis wipe. Songs, roster, and lineup stay
+in the night blob — only `amplify_accounts` moves.
+
+1. Create a Supabase project (or Marketplace → Supabase on the Vercel project).
+2. Run [`supabase/schema.sql`](supabase/schema.sql) in the SQL editor.
+3. Set on the Amplify deploy:
+
+| Variable | Purpose |
+| --- | --- |
+| `SUPABASE_URL` | Project URL (`https://xxxx.supabase.co`) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service-role key (server only — never ship to browsers) |
+| `SUPABASE_JAM_ID` | Optional jam namespace; defaults to `KV_PREFIX` or `amplify` |
+
+`/api/health` reports `hasSupabaseUsers: true` when those are set. First boot
+with existing accounts in Redis/file seeds the table automatically. Still no
+npm dependencies — the server speaks PostgREST with `fetch`.
+
 Amplify has no transport security of its own. Run it on the venue's local
 network, not the open internet.
 
@@ -206,6 +226,9 @@ Useful environment variables:
 | `KV_REST_API_TOKEN` | — | Token for that endpoint |
 | `KV_PREFIX` | `amplify` | Key prefix, so two jams can share one store |
 | `HOST_KEY` | — | Fixes the host key instead of generating one. Hosted deploys never print theirs, so set this to a secret you choose |
+| `SUPABASE_URL` | — | When set with a service-role key, accounts dual-write to Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | — | Service-role key for `amplify_accounts` |
+| `SUPABASE_JAM_ID` | `KV_PREFIX` / `amplify` | Separates prod/test rows in one project |
 
 ## Tests
 
@@ -228,6 +251,8 @@ api/[...path].js     the same app as a serverless function
 src/app.js           routing, validation, the REST API
 src/signups.js       who signed up and who may be picked — pure, no I/O
 src/store.js         file and key-value backends, per-request isolation
+src/supabase-users.js  optional Supabase dual-write for registered accounts
+supabase/schema.sql  table + RLS for amplify_accounts
 public/js/qr.js      QR encoder, so the sign-up code works with the wifi down
 public/              the three screens; no build step, no framework
 DESIGN.md            tokens, component rules, the a11y sweep, QA checklist

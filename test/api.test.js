@@ -578,6 +578,7 @@ test('health reports store mode without secrets', async () => {
   assert.equal(res.data.realtime, 'sse');
   assert.equal(res.data.hasKv, false);
   assert.equal(res.data.hasHostKey, false);
+  assert.equal(res.data.hasSupabaseUsers, false);
   assert.equal(res.data.hostToken, undefined);
 });
 
