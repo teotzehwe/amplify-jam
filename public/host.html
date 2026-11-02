@@ -63,14 +63,12 @@
     }
     /* Primary navigation, and 40px by default — under the thumb floor. */
     @media (pointer: coarse) { .tabs button { min-height: 44px; } }
-    /* Four tabs plus their counts need ~355px of the 339px a 375px phone
-       offers, so Settings was clipped behind a scrollbar. Tightening the
-       horizontal padding on narrow screens fits all four without scrolling —
-       primary navigation should not need to be discovered by dragging. */
+    /* Five tabs plus counts overflow a 375px phone unless padding is tight.
+       Primary navigation should not need to be discovered by dragging. */
     @media (max-width: 400px) {
-      .tabs { padding: 2px 0 8px; gap: 6px; }
-      .tabs button { padding-left: 11px; padding-right: 11px; }
-      .tabs .count { margin-left: 4px; }
+      .tabs { padding: 2px 0 8px; gap: 4px; }
+      .tabs button { padding-left: 8px; padding-right: 8px; font-size: 0.8rem; }
+      .tabs .count { margin-left: 3px; }
     }
     /* --muted, not --faint: the tab strip sits on --surface-3, the darkest of
        the paper tones, where --faint measures 4.35:1. It stays quieter than the

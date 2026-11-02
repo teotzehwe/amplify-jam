@@ -40,6 +40,9 @@ let refresh = () => {};
       .then(() => true)
       .catch(() => false);
   }
+  if (authed) {
+    loadUsers().catch(() => {});
+  }
   bindTourHost({
     setTab: (id) => {
       if (tab === id) return false;
@@ -102,6 +105,8 @@ function gate() {
     await api('/host/auth', { method: 'POST', body: { token: key } });
     tokens.host = key;
     authed = true;
+    usersLoaded = false;
+    loadUsers().catch(() => {});
     refresh(true);
   }));
 
@@ -133,19 +138,43 @@ const TABS = [
   ['now', 'Now'],
   ['roster', 'Roster'],
   ['songs', 'Songs'],
+  ['users', 'Users'],
   ['settings', 'Settings'],
 ];
+
+/** Host-managed accounts — loaded with the console, kept outside redraw drafts. */
+let usersCache = [];
+let usersLoaded = false;
+const userDraft = { username: '', displayName: '', password: '' };
+/** Optional password reset field keyed by user id. */
+const passwordResets = new Map();
+
+async function loadUsers({ force = false } = {}) {
+  if (usersLoaded && !force) return usersCache;
+  const data = await api('/host/users');
+  usersCache = data.users || [];
+  usersLoaded = true;
+  return usersCache;
+}
 
 function console_() {
   const present = state.players.filter((p) => p.present).length;
   const waiting = pendingSongs(state).length;
-  const counts = { roster: state.players.length, songs: approvedSongs(state).length };
+  const counts = {
+    roster: state.players.length,
+    songs: approvedSongs(state).length,
+    users: usersCache.length,
+  };
 
   const panelTour = {
     now: 'host-now',
     roster: 'host-roster',
     songs: 'host-songs',
   }[tab];
+
+  if (tab === 'users' && !usersLoaded) {
+    loadUsers().then(() => draw()).catch((err) => toast(err.message, 'error'));
+  }
 
   return el('div', { class: 'stack stack--lg' },
     masthead(state.jam.name, `${pluralize(state.roundIndex, 'song')} played · ${present} here now`,
@@ -170,16 +199,11 @@ function console_() {
           id: `tab-${id}`,
           'aria-selected': String(tab === id),
           'aria-controls': `panel-${id}`,
-          // Roving tabindex: the strip is one stop, arrows move within it.
-          // Announcing these as tabs without that is worse than not announcing
-          // them — it promises a keyboard model that then does not work.
           tabIndex: tab === id ? 0 : -1,
           onKeydown: onTabKey,
           onClick: () => { tab = id; draw(); },
         }, label,
           counts[id] != null ? el('span', { class: 'count' }, counts[id]) : null,
-          // Requests waiting on you are the one thing worth pulling attention
-          // to across tabs — an unvetted song is invisible to the room.
           id === 'songs' && waiting
             ? el('span', { class: 'count count--alert' }, `${waiting} new`)
             : null,
@@ -196,6 +220,7 @@ function console_() {
       tab === 'now' ? nowTab() : null,
       tab === 'roster' ? rosterTab() : null,
       tab === 'songs' ? songsTab() : null,
+      tab === 'users' ? usersTab() : null,
       tab === 'settings' ? settingsTab() : null,
     ),
   );
@@ -868,6 +893,157 @@ function songAdminCard(song, index) {
         label: 'Remove',
         title: `Remove “${song.title}” from the setlist`,
         onConfirm: () => api(`/songs/${song.id}`, { method: 'DELETE' }),
+        onChange: draw,
+      }),
+    ),
+  );
+}
+
+/* ----------------------------------------------------------------- users */
+
+function usersTab() {
+  const add = guard(busy(async () => {
+    if (!userDraft.username.trim()) {
+      shake($('#user-username')?.closest('.field') || $('#user-username'));
+      return toast('Pick a username', 'error');
+    }
+    if (!userDraft.password || userDraft.password.length < 6) {
+      shake($('#user-password')?.closest('.field') || $('#user-password'));
+      return toast('Password needs at least 6 characters', 'error');
+    }
+    await api('/host/users', {
+      method: 'POST',
+      body: {
+        username: userDraft.username.trim(),
+        displayName: userDraft.displayName.trim() || userDraft.username.trim(),
+        password: userDraft.password,
+      },
+    });
+    userDraft.username = '';
+    userDraft.displayName = '';
+    userDraft.password = '';
+    toast('Account created — they can sign in on their phone');
+    await loadUsers({ force: true });
+    draw();
+  }, 'host-add-user'));
+
+  return el('div', { class: 'stack', dataset: { tour: 'host-users' } },
+    el('section', { class: 'card stack' },
+      el('div', { class: 'card__head' },
+        el('h2', {}, 'Add a user'),
+        el('span', { class: 'hint' }, 'Password sign-in for the room'),
+      ),
+      el('p', { class: 'section-note' },
+        'Accounts outlast a single night. Someone signs in with their username and password, and their seat on tonight’s roster comes back with them.'),
+      el('div', { class: 'field' },
+        el('label', { for: 'user-username' }, 'Username'),
+        el('input', {
+          id: 'user-username',
+          type: 'text',
+          autocomplete: 'off',
+          spellcheck: 'false',
+          maxLength: 32,
+          placeholder: 'e.g. alex',
+          value: userDraft.username,
+          onInput: (e) => { userDraft.username = e.target.value; },
+        }),
+      ),
+      el('div', { class: 'field' },
+        el('label', { for: 'user-displayname' }, 'Display name'),
+        el('input', {
+          id: 'user-displayname',
+          type: 'text',
+          maxLength: 60,
+          placeholder: 'What the room calls them',
+          value: userDraft.displayName,
+          onInput: (e) => { userDraft.displayName = e.target.value; },
+        }),
+      ),
+      el('div', { class: 'field' },
+        el('label', { for: 'user-password' }, 'Password'),
+        el('input', {
+          id: 'user-password',
+          type: 'password',
+          autocomplete: 'new-password',
+          maxLength: 72,
+          placeholder: 'At least 6 characters',
+          value: userDraft.password,
+          onInput: (e) => { userDraft.password = e.target.value; },
+          onKeydown: (e) => e.key === 'Enter' && add(e),
+        }),
+      ),
+      el('button', { class: 'btn btn--primary', onClick: add }, 'Create account'),
+    ),
+
+    el('section', { class: 'card stack' },
+      el('div', { class: 'card__head' },
+        el('h2', {}, 'Accounts'),
+        el('span', { class: 'hint' },
+          usersLoaded ? pluralize(usersCache.length, 'user') : 'Loading…'),
+      ),
+      !usersLoaded
+        ? el('div', { class: 'empty' }, 'Loading accounts…')
+        : usersCache.length
+          ? el('div', { class: 'stack', style: { gap: '12px' } }, usersCache.map(userCard))
+          : el('div', { class: 'empty' },
+              'No accounts yet. Create one above — guests can still join with just a name.'),
+    ),
+  );
+}
+
+function userCard(user) {
+  const reset = passwordResets.get(user.id) || '';
+  const signedIn = state.players.some((p) => p.userId === user.id && !p.removed && p.present);
+
+  const save = guard(busy(async (patch) => {
+    await api(`/host/users/${user.id}`, { method: 'PATCH', body: patch });
+    passwordResets.delete(user.id);
+    toast('Saved');
+    await loadUsers({ force: true });
+    draw();
+  }, `host-user-${user.id}`));
+
+  return el('div', { class: `person${user.disabled ? ' person--away' : ''}` },
+    el('div', { class: 'person__top' },
+      el('span', { class: `dot dot--${user.disabled ? 'out' : 'in'}` }),
+      el('span', { class: 'person__name grow truncate' }, user.displayName || user.username),
+      el('span', { class: 'tag mono' }, user.username),
+      signedIn ? el('span', { class: 'tag tag--in' }, 'Here now') : null,
+      user.disabled ? el('span', { class: 'tag' }, 'Disabled') : null,
+    ),
+    el('div', { class: 'row row--wrap', style: { gap: '8px', marginTop: '8px' } },
+      el('input', {
+        type: 'password',
+        class: 'grow',
+        placeholder: 'New password',
+        'aria-label': `New password for ${user.username}`,
+        value: reset,
+        autocomplete: 'new-password',
+        onInput: (e) => { passwordResets.set(user.id, e.target.value); },
+      }),
+      el('button', {
+        class: 'btn btn--sm',
+        disabled: !reset || reset.length < 6,
+        onClick: () => save({ password: reset }),
+      }, 'Reset password'),
+    ),
+    el('div', { class: 'row row--wrap', style: { marginTop: '8px', gap: '8px' } },
+      el('button', {
+        class: 'btn btn--sm btn--ghost',
+        onClick: () => save({ disabled: !user.disabled }),
+      }, user.disabled ? 'Enable' : 'Disable'),
+      el('span', { class: 'spacer' }),
+      confirmButton({
+        key: `remove-user:${user.id}`,
+        label: 'Remove',
+        title: `Remove account ${user.username}?`,
+        onConfirm: async () => {
+          await api(`/host/users/${user.id}`, { method: 'DELETE' });
+          passwordResets.delete(user.id);
+          toast('Account removed');
+          await loadUsers({ force: true });
+          draw();
+        },
         onChange: draw,
       }),
     ),

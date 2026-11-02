@@ -699,3 +699,67 @@ test('import refuses backups with incomplete players or unknown song status', as
   assert.notEqual(data.jam.name, 'X');
   assert.ok(!data.songs.some((s) => s.status === 'mystery'));
 });
+
+test('the host can create users and they can sign in with a password', async () => {
+  const before = await call('/state');
+  assert.equal(before.data.hasUsers, false);
+
+  assert.equal((await call('/host/users', { method: 'POST', body: {
+    username: 'alex', displayName: 'Alex', password: 'secret1',
+  } })).status, 403);
+
+  const created = await call('/host/users', {
+    method: 'POST',
+    body: { username: 'alex', displayName: 'Alex', password: 'secret1' },
+    host: true,
+  });
+  assert.equal(created.status, 200);
+  assert.equal(created.data.user.username, 'alex');
+  assert.equal(created.data.user.passwordHash, undefined);
+
+  const listed = await call('/host/users', { host: true });
+  assert.ok(listed.data.users.some((u) => u.username === 'alex'));
+
+  const pub = await call('/state');
+  assert.equal(pub.data.hasUsers, true);
+  assert.equal(pub.data.users, undefined);
+
+  assert.equal((await call('/auth/login', {
+    method: 'POST', body: { username: 'alex', password: 'nope' },
+  })).status, 401);
+
+  const login = await call('/auth/login', {
+    method: 'POST', body: { username: 'Alex', password: 'secret1' },
+  });
+  assert.equal(login.status, 200);
+  assert.ok(login.data.token);
+  assert.equal(login.data.username, 'alex');
+
+  const me = await call('/state', { player: login.data.token });
+  assert.equal(me.data.youId, login.data.id);
+  const row = me.data.players.find((p) => p.id === login.data.id);
+  assert.equal(row.name, 'Alex');
+  assert.equal(row.userId, created.data.user.id);
+  assert.equal(row.token, undefined);
+
+  // Second login resumes the same seat with a fresh token.
+  const again = await call('/auth/login', {
+    method: 'POST', body: { username: 'alex', password: 'secret1' },
+  });
+  assert.equal(again.data.id, login.data.id);
+  assert.notEqual(again.data.token, login.data.token);
+  assert.equal((await call('/state', { player: login.data.token })).data.youId, null);
+  assert.equal((await call('/state', { player: again.data.token })).data.youId, login.data.id);
+});
+
+test('clearing the night keeps registered users', async () => {
+  await call('/host/users', {
+    method: 'POST',
+    body: { username: 'keepme', displayName: 'Keep', password: 'secret1' },
+    host: true,
+  });
+  await clearNight();
+  const listed = await call('/host/users', { host: true });
+  assert.ok(listed.data.users.some((u) => u.username === 'keepme'));
+  assert.equal((await call('/state')).data.hasUsers, true);
+});

@@ -15,6 +15,7 @@ import { openStore, newId, DEFAULT_INSTRUMENTS, migrate } from './store.js';
 import { commitRound, instrumentFor, mayPlay, signupsFor, STANCES, LEVELS } from './signups.js';
 import { buildPdf } from './pdf.js';
 import { buildSessionReport } from './report.js';
+import { hashPassword, publicUser, verifyPassword } from './passwords.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PUBLIC = join(ROOT, 'public');
@@ -203,6 +204,7 @@ route('POST', /^\/api\/join$/, (ctx) => {
     id: newId('u'),
     token: newId(),
     name,
+    userId: null,
     joinedAt: Date.now(),
     present: true,
     removed: false,
@@ -215,6 +217,145 @@ route('POST', /^\/api\/join$/, (ctx) => {
   };
   store.update((state) => state.players.push(player));
   return { id: player.id, token: player.token };
+});
+
+/** Username: 3–32 chars, letters/digits/._- — unique case-insensitively. */
+function parseUsername(value) {
+  const username = str(value, { max: 32, field: 'Username', required: true });
+  if (username.length < 3) throw bad('Username must be at least 3 characters');
+  if (!/^[a-zA-Z0-9._-]+$/.test(username)) {
+    throw bad('Username can only use letters, numbers, dots, underscores and hyphens');
+  }
+  return username;
+}
+
+function parseNewPassword(value) {
+  const password = String(value ?? '');
+  if (password.length < 6) throw bad('Password must be at least 6 characters');
+  if (password.length > 72) throw bad('Password is too long');
+  return password;
+}
+
+/**
+ * Sign in with a host-created account. Resumes tonight's player seat for that
+ * user (or opens a fresh one) and rotates the session token.
+ */
+route('POST', /^\/api\/auth\/login$/, (ctx) => {
+  const username = parseUsername(ctx.body.username);
+  const password = String(ctx.body.password ?? '');
+  const user = store.userByUsername(username);
+  if (!user || user.disabled || !verifyPassword(password, user.passwordSalt, user.passwordHash)) {
+    throw new HttpError(401, 'Username or password is wrong');
+  }
+
+  let playerId;
+  let token;
+  store.update((state) => {
+    let player = state.players.find((p) => p.userId === user.id && !p.removed);
+    if (!player) {
+      player = {
+        id: newId('u'),
+        token: newId(),
+        name: user.displayName || user.username,
+        userId: user.id,
+        joinedAt: Date.now(),
+        present: true,
+        removed: false,
+        instruments: Array.isArray(user.instruments) && user.instruments.length
+          ? structuredClone(user.instruments)
+          : [{ name: 'Vocals', level: 'comfortable' }],
+        stances: {},
+        picks: {},
+        limits: {},
+        notes: '',
+        stats: { plays: 0, lastRound: null, streak: 0, byInstrument: {} },
+      };
+      state.players.push(player);
+    } else {
+      player.token = newId();
+      player.present = true;
+      if (!player.name) player.name = user.displayName || user.username;
+    }
+    playerId = player.id;
+    token = player.token;
+  });
+  return { id: playerId, token, userId: user.id, username: user.username };
+});
+
+route('GET', /^\/api\/host\/users$/, (ctx) => {
+  requireHost(ctx);
+  return {
+    users: (store.state.users || []).map(publicUser),
+  };
+});
+
+route('POST', /^\/api\/host\/users$/, (ctx) => {
+  requireHost(ctx);
+  const username = parseUsername(ctx.body.username);
+  if (store.userByUsername(username)) throw bad('That username is already taken');
+  const displayName = str(ctx.body.displayName || username, { max: 60, field: 'Display name', required: true });
+  const password = parseNewPassword(ctx.body.password);
+  const instruments = ctx.body.instruments != null
+    ? parseInstruments(ctx.body.instruments)
+    : [];
+  const { salt, hash } = hashPassword(password);
+  const user = {
+    id: newId('usr'),
+    username,
+    displayName,
+    passwordHash: hash,
+    passwordSalt: salt,
+    instruments,
+    disabled: false,
+    createdAt: Date.now(),
+  };
+  store.update((state) => {
+    if (!Array.isArray(state.users)) state.users = [];
+    state.users.push(user);
+  });
+  return { user: publicUser(user) };
+});
+
+route('PATCH', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
+  requireHost(ctx);
+  const user = store.userById(ctx.params[0]);
+  if (!user) throw new HttpError(404, 'User not found');
+  const body = ctx.body || {};
+
+  if (body.username != null) {
+    const username = parseUsername(body.username);
+    const clash = store.userByUsername(username);
+    if (clash && clash.id !== user.id) throw bad('That username is already taken');
+  }
+
+  store.update(() => {
+    if (body.username != null) user.username = parseUsername(body.username);
+    if (body.displayName != null) {
+      user.displayName = str(body.displayName, { max: 60, field: 'Display name', required: true });
+    }
+    if (body.instruments != null) user.instruments = parseInstruments(body.instruments);
+    if (body.disabled != null) user.disabled = Boolean(body.disabled);
+    if (body.password != null && body.password !== '') {
+      const { salt, hash } = hashPassword(parseNewPassword(body.password));
+      user.passwordSalt = salt;
+      user.passwordHash = hash;
+    }
+  });
+  return { user: publicUser(user) };
+});
+
+route('DELETE', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
+  requireHost(ctx);
+  const user = store.userById(ctx.params[0]);
+  if (!user) throw new HttpError(404, 'User not found');
+  store.update((state) => {
+    state.users = (state.users || []).filter((u) => u.id !== user.id);
+    // Keep tonight's roster rows; just unlink the account.
+    for (const p of state.players) {
+      if (p.userId === user.id) p.userId = null;
+    }
+  });
+  return { ok: true };
 });
 
 route('PATCH', /^\/api\/players\/([\w-]+)$/, (ctx) => {
@@ -607,6 +748,10 @@ function assertNightBackup(night) {
   if (night.players.length > BACKUP_MAX_ROWS || night.songs.length > BACKUP_MAX_ROWS) {
     throw bad('That backup is too large to restore');
   }
+  if (night.users != null) {
+    if (!Array.isArray(night.users)) throw bad('That file does not look like an Amplify night backup');
+    if (night.users.length > BACKUP_MAX_ROWS) throw bad('That backup is too large to restore');
+  }
   if (night.rounds != null && !Array.isArray(night.rounds)) {
     throw bad('That file does not look like an Amplify night backup');
   }
@@ -621,6 +766,14 @@ function assertNightBackup(night) {
     }
     if (s.status != null && !SONG_STATUSES.has(s.status)) {
       throw bad('A song in that backup has an unknown status');
+    }
+  }
+  for (const u of night.users || []) {
+    if (!u || typeof u !== 'object' || typeof u.id !== 'string' || typeof u.username !== 'string') {
+      throw bad('A user in that backup is incomplete');
+    }
+    if (typeof u.passwordHash !== 'string' || typeof u.passwordSalt !== 'string') {
+      throw bad('A user in that backup is missing its password credentials');
     }
   }
 }
