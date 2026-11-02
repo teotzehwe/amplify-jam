@@ -241,11 +241,16 @@ function parseNewPassword(value) {
   return password;
 }
 
-/** In-memory login throttle: per client IP and per username. */
+/**
+ * In-memory login throttle: per client IP, and per IP+username pair.
+ * Username alone is never a key — that would let strangers lock out accounts.
+ */
 const loginAttempts = new Map();
 const LOGIN_FAIL_LIMIT = 5;
 const LOGIN_BACKOFF_BASE_MS = 30_000;
 const LOGIN_BACKOFF_CAP_MS = 15 * 60 * 1000;
+/** Drop idle failure tallies that never reached a lockout. */
+const LOGIN_IDLE_RESET_MS = 15 * 60 * 1000;
 
 function clientIp(ctx) {
   const forwarded = String(ctx.ip || '').split(',')[0].trim();
@@ -253,27 +258,63 @@ function clientIp(ctx) {
 }
 
 function loginKeys(ip, username) {
-  return [`ip:${ip}`, `user:${String(username).toLowerCase()}`];
+  const user = String(username).toLowerCase();
+  return [`ip:${ip}`, `ipuser:${ip}:${user}`];
 }
 
-function assertLoginAllowed(ip, username) {
-  const now = Date.now();
-  for (const key of loginKeys(ip, username)) {
-    const row = loginAttempts.get(key);
-    if (row?.until > now) {
-      throw new HttpError(429, 'Too many sign-in attempts — try again in a moment');
+function loginBackoffMs(count) {
+  const excess = Math.min(Math.max(0, count - LOGIN_FAIL_LIMIT), 5);
+  return Math.min(LOGIN_BACKOFF_CAP_MS, LOGIN_BACKOFF_BASE_MS * (2 ** excess));
+}
+
+function pruneLoginAttempts(now = Date.now()) {
+  for (const [key, row] of loginAttempts) {
+    if (row.until && row.until <= now) {
+      loginAttempts.delete(key);
+      continue;
+    }
+    if (!row.until && now - (row.touched || 0) > LOGIN_IDLE_RESET_MS) {
+      loginAttempts.delete(key);
     }
   }
 }
 
-function recordLoginFailure(ip, username) {
+/**
+ * Sync gate before the awaited scrypt verify. Reserves a failure slot so
+ * parallel guesses cannot all slip under the limit while scrypt runs.
+ */
+function beginLoginAttempt(ip, username) {
+  const now = Date.now();
+  pruneLoginAttempts(now);
+  for (const key of loginKeys(ip, username)) {
+    let row = loginAttempts.get(key);
+    if (row?.until > now) {
+      throw new HttpError(429, 'Too many sign-in attempts — try again in a moment');
+    }
+    if (!row || (row.until && row.until <= now)) {
+      row = { count: 0, until: 0, touched: now };
+    }
+    if (row.count >= LOGIN_FAIL_LIMIT) {
+      row.until = now + loginBackoffMs(row.count);
+      row.touched = now;
+      loginAttempts.set(key, row);
+      throw new HttpError(429, 'Too many sign-in attempts — try again in a moment');
+    }
+    row.count += 1;
+    row.touched = now;
+    loginAttempts.set(key, row);
+  }
+}
+
+/** After a failed verify — count was already reserved; apply lockout if needed. */
+function finishLoginFailure(ip, username) {
   const now = Date.now();
   for (const key of loginKeys(ip, username)) {
-    const row = loginAttempts.get(key) || { count: 0, until: 0 };
-    row.count += 1;
+    const row = loginAttempts.get(key);
+    if (!row) continue;
+    row.touched = now;
     if (row.count >= LOGIN_FAIL_LIMIT) {
-      const excess = Math.min(row.count - LOGIN_FAIL_LIMIT, 5);
-      row.until = now + Math.min(LOGIN_BACKOFF_CAP_MS, LOGIN_BACKOFF_BASE_MS * (2 ** excess));
+      row.until = now + loginBackoffMs(row.count);
     }
     loginAttempts.set(key, row);
   }
@@ -291,7 +332,7 @@ route('POST', /^\/api\/auth\/login$/, async (ctx) => {
   const username = parseUsername(ctx.body.username);
   const password = String(ctx.body.password ?? '');
   const ip = clientIp(ctx);
-  assertLoginAllowed(ip, username);
+  beginLoginAttempt(ip, username);
 
   const user = store.userByUsername(username);
   // Always pay scrypt cost (dummy salt/hash when unknown) so timing cannot
@@ -300,7 +341,7 @@ route('POST', /^\/api\/auth\/login$/, async (ctx) => {
   const hash = user?.passwordHash || DUMMY_CREDENTIAL.hash;
   const passwordOk = await verifyPasswordAsync(password, salt, hash);
   if (!user || user.disabled || !passwordOk) {
-    recordLoginFailure(ip, username);
+    finishLoginFailure(ip, username);
     throw new HttpError(401, 'Username or password is wrong');
   }
   clearLoginFailures(ip, username);
@@ -982,6 +1023,12 @@ export async function handleRequest(req, res) {
     }
 
     const forwarded = req.headers['x-forwarded-for'];
+    // Trust X-Forwarded-For only on Vercel, where the platform sets it.
+    // On a bare `node server.js` the client can spoof the header and dodge
+    // the per-IP login throttle.
+    const forwardedIp = process.env.VERCEL && typeof forwarded === 'string'
+      ? forwarded.split(',')[0].trim()
+      : '';
     const ctx = {
       params: path.match(match.pattern).slice(1),
       body,
@@ -990,9 +1037,7 @@ export async function handleRequest(req, res) {
       // the browser and stores it; API calls must send x-host-token.
       hostToken: req.headers['x-host-token'] || '',
       playerToken: req.headers['x-player-token'] || '',
-      ip: (typeof forwarded === 'string' && forwarded.split(',')[0].trim())
-        || req.socket?.remoteAddress
-        || '',
+      ip: forwardedIp || req.socket?.remoteAddress || '',
     };
 
     try {

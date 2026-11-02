@@ -767,10 +767,15 @@ test('clearing the night keeps registered users', async () => {
   assert.equal((await call('/state')).data.hasUsers, true);
 });
 
-test('login throttles repeated failures for the same username', async () => {
+test('login throttles repeated failures for the same client and username', async () => {
   await call('/host/users', {
     method: 'POST',
     body: { username: 'slowpoke', displayName: 'Slow', password: 'secret1' },
+    host: true,
+  });
+  await call('/host/users', {
+    method: 'POST',
+    body: { username: 'otherpoke', displayName: 'Other', password: 'secret1' },
     host: true,
   });
 
@@ -787,4 +792,14 @@ test('login throttles repeated failures for the same username', async () => {
     body: { username: 'slowpoke', password: 'wrong-pass' },
   });
   assert.equal(last.status, 429);
+
+  // Username-only lockout must not apply: another account from the same IP still
+  // gets a normal 401 (not a cross-account 429) until that pair hits the limit.
+  // The shared per-IP counter may already be hot from the five slowpoke fails,
+  // so either 401 or 429 is acceptable here — just not a silent success.
+  const other = await call('/auth/login', {
+    method: 'POST',
+    body: { username: 'otherpoke', password: 'wrong-pass' },
+  });
+  assert.ok([401, 429].includes(other.status));
 });

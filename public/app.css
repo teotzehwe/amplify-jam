@@ -1050,8 +1050,9 @@ details.folio--details > summary + * { margin-top: 16px; }
   pointer-events: auto;
   z-index: 1;
 }
-.tour__scrim:has(+ .tour__hole) {
-  /* Hole carries the dim via box-shadow; hide the full scrim to avoid double dark. */
+.tour__scrim:has(+ .tour__hole:not([hidden])) {
+  /* Hole carries the dim via box-shadow; hide the full scrim to avoid double dark.
+     Ignore hidden holes (welcome / closing steps) so the scrim stays visible. */
   background: transparent;
 }
 .tour__card {
