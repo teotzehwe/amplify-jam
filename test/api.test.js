@@ -26,8 +26,12 @@ before(async () => {
   base = `http://127.0.0.1:${port}`;
 
   server = spawn(process.execPath, [join(ROOT, 'server.js')], {
+    // Do not inherit process.env — a shell/CI KV URL or VERCEL flag would
+    // point these tests at remote storage or trip hosted-mode 503s.
     env: {
-      ...process.env,
+      PATH: process.env.PATH,
+      TMPDIR: process.env.TMPDIR || process.env.TMP || '',
+      HOME: process.env.HOME || '',
       PORT: String(port),
       DATA_DIR: dataDir,
       // Let throttle tests set distinct client IPs via X-Forwarded-For without
