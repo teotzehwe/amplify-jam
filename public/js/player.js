@@ -4,8 +4,12 @@ import {
   $, api, approvedSongs, busy, confirmButton, declinedSongs, el, guard, masthead, pendingSongs, pluralize, render,
   shake, subscribe, toast, tokens,
 } from './common.js';
+import {
+  playerTourSteps, startTour, syncTour, tourButton, tourSeen,
+} from './tour.js';
 
 const app = $('#app');
+const PLAYER_TOUR = 'player';
 
 /** Everything the sign-up form is holding before it is submitted. */
 const draft = {
@@ -49,25 +53,43 @@ function section(id, title, ...children) {
  */
 function draw() {
   if (!state) return;
-  const active = document.activeElement;
-  const focusId = active?.id || null;
-  const caret = active && 'selectionStart' in active ? active.selectionStart : null;
+  const activeEl = document.activeElement;
+  const focusId = activeEl?.id || null;
+  const caret = activeEl && 'selectionStart' in activeEl ? activeEl.selectionStart : null;
+  const tourOwnsFocus = Boolean(activeEl?.closest?.('#tour-root'));
 
   const you = me();
   render(app, you ? youView(you) : signupView());
 
   // First paint gets entrance motion; live rebuilds stay still.
   if (!app.classList.contains('is-live')) {
-    requestAnimationFrame(() => app.classList.add('is-live'));
+    requestAnimationFrame(() => {
+      app.classList.add('is-live');
+      maybeStartPlayerTour();
+    });
   }
 
-  if (!focusId) return;
+  syncTour();
+
+  if (tourOwnsFocus || !focusId) return;
   const restored = document.getElementById(focusId);
   if (!restored) return;
   restored.focus({ preventScroll: true });
   if (caret != null && restored.setSelectionRange) {
     try { restored.setSelectionRange(caret, caret); } catch { /* not a text input */ }
   }
+}
+
+function playerSteps() {
+  return playerTourSteps({
+    you: me,
+    suggestionsOn: () => Boolean(state?.jam?.allowSuggestions),
+  });
+}
+
+function maybeStartPlayerTour() {
+  if (tourSeen(PLAYER_TOUR)) return;
+  startTour(PLAYER_TOUR, playerSteps());
 }
 
 /* ------------------------------------------------------------------ shared */
@@ -344,7 +366,7 @@ function suggestSong(you) {
   const mine = state.songs.filter((s) => s.suggestedBy === you.id);
   const gated = state.jam.requireApproval;
 
-  return el('section', { class: 'folio' },
+  return el('section', { class: 'folio', dataset: { tour: 'player-suggest' } },
     el('div', { class: 'folio__rule' },
       el('h2', {}, 'Suggest a song'),
       el('span', { class: 'hint' }, 'As many as you like'),
@@ -392,9 +414,11 @@ function signupView() {
   }));
 
   return el('div', { class: 'stack stack--lg' },
-    masthead(state.jam.name, 'Hey! Jump in and tell us who you are.'),
+    masthead(state.jam.name, 'Hey! Jump in and tell us who you are.',
+      tourButton(PLAYER_TOUR, playerSteps),
+    ),
 
-    el('section', { class: 'folio' },
+    el('section', { class: 'folio', dataset: { tour: 'player-join' } },
       el('div', { class: 'field' },
         el('label', { for: 'name' }, 'Your name'),
         el('input', {
@@ -435,7 +459,9 @@ function youView(you) {
   const waited = you.stats.lastRound == null ? state.roundIndex : state.roundIndex - you.stats.lastRound;
 
   return el('div', { class: 'stack stack--lg' },
-    masthead(state.jam.name, `Nice — you're in as ${you.name}.`),
+    masthead(state.jam.name, `Nice — you're in as ${you.name}.`,
+      tourButton(PLAYER_TOUR, playerSteps),
+    ),
 
     yourSlot
       ? el('section', { class: 'onstage' },
@@ -446,7 +472,7 @@ function youView(you) {
         )
       : null,
 
-    el('section', { class: 'folio' },
+    el('section', { class: 'folio', dataset: { tour: 'player-profile' } },
       el('div', { class: 'row row--between row--wrap' },
         el('div', {},
           el('h2', { class: 'folio__name' }, you.name),
@@ -469,7 +495,7 @@ function youView(you) {
       ),
     ),
 
-    el('section', { class: 'folio' },
+    el('section', { class: 'folio', dataset: { tour: 'player-songs' } },
       el('div', { class: 'folio__rule' },
         el('span', { class: 'kicker' }, 'Pick some songs'),
         el('span', { class: 'hint' }, 'As many as you want'),

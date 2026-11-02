@@ -5,9 +5,13 @@ import {
   playedSongIds, pluralize, render, shake, signupsFor, subscribe, toast, tokens, upNext,
 } from './common.js';
 import { qrSvg } from './qr.js';
+import {
+  adminTourSteps, bindTourHost, startTour, syncTour, tourButton, tourSeen,
+} from './tour.js';
 
 const app = $('#app');
 const overlayRoot = $('#overlay');
+const ADMIN_TOUR = 'admin';
 
 let state = null;
 let authed = false;
@@ -36,6 +40,15 @@ let refresh = () => {};
       .then(() => true)
       .catch(() => false);
   }
+  bindTourHost({
+    setTab: (id) => {
+      if (tab === id) return false;
+      tab = id;
+      return true;
+    },
+    paint: () => draw(),
+  });
+
   refresh = subscribe((next) => {
     state = next;
     draw();
@@ -44,25 +57,37 @@ let refresh = () => {};
 
 function draw() {
   if (!state) return;
-  const active = document.activeElement;
-  const focusId = active?.id || null;
-  const caret = active && 'selectionStart' in active ? active.selectionStart : null;
+  const activeEl = document.activeElement;
+  const focusId = activeEl?.id || null;
+  const caret = activeEl && 'selectionStart' in activeEl ? activeEl.selectionStart : null;
+  // Don't steal focus from the tour dialog on live redraws.
+  const tourOwnsFocus = Boolean(activeEl?.closest?.('#tour-root'));
 
   render(app, authed ? console_() : gate());
   render(overlayRoot, calloutOpen && state.current ? callout(state.current, { closable: true }) : null);
 
   // First paint gets entrance motion; subsequent live rebuilds stay still.
   if (!app.classList.contains('is-live')) {
-    requestAnimationFrame(() => app.classList.add('is-live'));
+    requestAnimationFrame(() => {
+      app.classList.add('is-live');
+      maybeStartHostTour();
+    });
   }
 
-  if (!focusId) return;
+  syncTour();
+
+  if (tourOwnsFocus || !focusId) return;
   const restored = document.getElementById(focusId);
   if (!restored) return;
   restored.focus({ preventScroll: true });
   if (caret != null && restored.setSelectionRange) {
     try { restored.setSelectionRange(caret, caret); } catch { /* not a text field */ }
   }
+}
+
+function maybeStartHostTour() {
+  if (!authed || tourSeen(ADMIN_TOUR)) return;
+  startTour(ADMIN_TOUR, adminTourSteps());
 }
 
 /* -------------------------------------------------------------------- gate */
@@ -116,12 +141,29 @@ function console_() {
   const waiting = pendingSongs(state).length;
   const counts = { roster: state.players.length, songs: approvedSongs(state).length };
 
+  const panelTour = {
+    now: 'host-now',
+    roster: 'host-roster',
+    songs: 'host-songs',
+  }[tab];
+
   return el('div', { class: 'stack stack--lg' },
     masthead(state.jam.name, `${pluralize(state.roundIndex, 'song')} played · ${present} here now`,
-      el('a', { class: 'btn btn--ghost btn--sm', href: '/board', target: '_blank' }, 'Stage display ↗'),
+      tourButton(ADMIN_TOUR, adminTourSteps, 'Admin tour'),
+      el('a', {
+        class: 'btn btn--ghost btn--sm',
+        href: '/board',
+        target: '_blank',
+        dataset: { tour: 'host-stage' },
+      }, 'Stage display ↗'),
     ),
 
-    el('nav', { class: 'tabs', role: 'tablist', 'aria-label': 'Console sections' },
+    el('nav', {
+      class: 'tabs',
+      role: 'tablist',
+      'aria-label': 'Console sections',
+      dataset: { tour: 'host-tabs' },
+    },
       TABS.map(([id, label]) =>
         el('button', {
           role: 'tab',
@@ -145,7 +187,12 @@ function console_() {
       ),
     ),
 
-    el('div', { role: 'tabpanel', id: `panel-${tab}`, 'aria-labelledby': `tab-${tab}` },
+    el('div', {
+      role: 'tabpanel',
+      id: `panel-${tab}`,
+      'aria-labelledby': `tab-${tab}`,
+      ...(panelTour ? { dataset: { tour: panelTour } } : {}),
+    },
       tab === 'now' ? nowTab() : null,
       tab === 'roster' ? rosterTab() : null,
       tab === 'songs' ? songsTab() : null,
@@ -511,14 +558,14 @@ function queueOrder(players) {
 
 function rosterTab() {
   if (!state.players.length) {
-    return el('section', { class: 'card' },
+    return el('section', { class: 'card', dataset: { tour: 'host-roster' } },
       el('div', { class: 'empty' }, 'No sign-ups yet. The link lives in Settings.'));
   }
 
   const maxPlays = Math.max(1, ...state.players.map((p) => p.stats.plays));
   const waiting = state.players.filter((p) => p.present && p.stats.plays === 0).length;
 
-  return el('div', { class: 'stack' },
+  return el('div', { class: 'stack', dataset: { tour: 'host-roster' } },
     el('section', { class: 'card' },
       el('div', { class: 'stat-strip' },
         el('div', { class: 'stat' }, el('b', {}, state.players.length), el('span', {}, 'Signed up')),
@@ -613,33 +660,33 @@ function songsTab() {
 
   return el('div', { class: 'stack' },
     requests(),
-
-    el('section', { class: 'card stack' },
-      el('div', { class: 'card__head' }, el('h2', {}, 'Add a song')),
-      el('div', { class: 'row row--wrap' },
-        el('input', { id: 's-title', type: 'text', placeholder: 'Title', class: 'grow',
-          'aria-label': 'Song title', value: songDraft.title,
-          onInput: (e) => { songDraft.title = e.target.value; },
-          onKeydown: (e) => e.key === 'Enter' && add() }),
-        el('input', { id: 's-artist', type: 'text', placeholder: 'Artist', class: 'grow',
-          'aria-label': 'Artist', value: songDraft.artist,
-          onInput: (e) => { songDraft.artist = e.target.value; },
-          onKeydown: (e) => e.key === 'Enter' && add() }),
-        el('button', { class: 'btn btn--primary', onClick: add }, 'Add'),
+    el('div', { class: 'stack', dataset: { tour: 'host-setlist' } },
+      el('section', { class: 'card stack' },
+        el('div', { class: 'card__head' }, el('h2', {}, 'Add a song')),
+        el('div', { class: 'row row--wrap' },
+          el('input', { id: 's-title', type: 'text', placeholder: 'Title', class: 'grow',
+            'aria-label': 'Song title', value: songDraft.title,
+            onInput: (e) => { songDraft.title = e.target.value; },
+            onKeydown: (e) => e.key === 'Enter' && add() }),
+          el('input', { id: 's-artist', type: 'text', placeholder: 'Artist', class: 'grow',
+            'aria-label': 'Artist', value: songDraft.artist,
+            onInput: (e) => { songDraft.artist = e.target.value; },
+            onKeydown: (e) => e.key === 'Enter' && add() }),
+          el('button', { class: 'btn btn--primary', onClick: add }, 'Add'),
+        ),
+        el('p', { class: 'section-note' },
+          'Anything you add here goes straight onto the setlist — you are the one doing the vetting.'),
       ),
-      el('p', { class: 'section-note' },
-        'Anything you add here goes straight onto the setlist — you are the one doing the vetting.'),
-    ),
-
-    el('section', { class: 'card stack' },
-      el('div', { class: 'card__head' },
-        el('h2', {}, 'The setlist'),
-        el('span', { class: 'hint' },
-          `${pluralize(queue.length, 'song')} · the top one not yet played is up next`),
+      el('section', { class: 'card stack' },
+        el('div', { class: 'card__head' },
+          el('h2', {}, 'The setlist'),
+          el('span', { class: 'hint' },
+            `${pluralize(queue.length, 'song')} · the top one not yet played is up next`),
+        ),
+        queue.length
+          ? el('div', { class: 'stack', style: { gap: '10px' } }, queue.map(songAdminCard))
+          : el('div', { class: 'empty' }, 'Nothing here yet. Add the songs you expect to call tonight.'),
       ),
-      queue.length
-        ? el('div', { class: 'stack', style: { gap: '10px' } }, queue.map(songAdminCard))
-        : el('div', { class: 'empty' }, 'Nothing here yet. Add the songs you expect to call tonight.'),
     ),
   );
 }
@@ -655,7 +702,14 @@ function requests() {
   const waiting = pendingSongs(state);
   if (!waiting.length) {
     declineDraft = null;
-    return null;
+    return el('section', { class: 'card', dataset: { tour: 'host-requests' } },
+      el('div', { class: 'card__head' },
+        el('h2', {}, 'Requests'),
+        el('span', { class: 'hint' }, 'None waiting'),
+      ),
+      el('div', { class: 'empty' },
+        'When someone suggests a song, it lands here for a yes or no before anyone can sign up.'),
+    );
   }
   // Drop a draft if that request was approved/removed while we were typing.
   if (declineDraft && !waiting.some((s) => s.id === declineDraft.songId)) {
@@ -679,7 +733,7 @@ function requests() {
     await refresh(true);
   }, `host-decline:${song.id}`))();
 
-  return el('section', { class: 'card stack card--alert' },
+  return el('section', { class: 'card stack card--alert', dataset: { tour: 'host-requests' } },
     el('div', { class: 'card__head' },
       el('h2', {}, 'Requests'),
       el('span', { class: 'hint' }, `${pluralize(waiting.length, 'song')} waiting on you`),
@@ -837,7 +891,7 @@ function settingsTab() {
   };
 
   return el('div', { class: 'stack' },
-    el('section', { class: 'card' },
+    el('section', { class: 'card', dataset: { tour: 'host-share' } },
       el('div', { class: 'card__head' },
         el('h2', {}, 'Share the sign-up'),
         el('span', { class: 'hint' }, 'Point a phone camera at the code'),
@@ -860,14 +914,14 @@ function settingsTab() {
       ),
     ),
 
-    el('section', { class: 'card stack stack--lg' },
+    el('section', { class: 'card stack stack--lg', dataset: { tour: 'host-band' } },
       el('div', { class: 'card__head' }, el('h2', {}, 'The band')),
       el('p', { class: 'section-note' },
         'The chairs you usually want filled. This is a readout on the sign-up sheet, not a limit — pick whoever you like.'),
       slotEditor(jam.slots, (slots) => save({ slots })),
     ),
 
-    el('section', { class: 'card stack stack--lg' },
+    el('section', { class: 'card stack stack--lg', dataset: { tour: 'host-gates' } },
       el('div', { class: 'card__head' }, el('h2', {}, 'Song requests')),
       el('label', { class: 'toggle' },
         el('input', {
@@ -902,107 +956,109 @@ function settingsTab() {
       ),
     ),
 
-    el('section', { class: 'card stack' },
-      el('div', { class: 'card__head' }, el('h2', {}, 'Session report')),
-      el('p', { class: 'section-note' },
-        'A shareable PDF of tonight — roster, setlist, who played, and waiting or declined requests. No session tokens.'),
-      el('div', { class: 'row row--wrap' },
-        el('button', {
-          class: 'btn btn--primary',
-          onClick: guard(busy(async () => {
-            await downloadSessionReport();
-            toast('Session report downloaded');
-          }, 'host-report')),
-        }, 'Download PDF report'),
-      ),
-    ),
-
-    el('section', { class: 'card stack' },
-      el('div', { class: 'card__head' }, el('h2', {}, 'Backup')),
-      el('p', { class: 'section-note' },
-        'Download the whole night (roster, songs, and player session tokens) so you can restore if Redis hiccups or someone clears too soon.'),
-      el('p', { class: 'section-note' },
-        'Treat the file like a password: anyone with it can restore those phones onto a night. Do not post it in chat or email.'),
-      el('div', { class: 'row row--wrap' },
-        el('button', {
-          class: 'btn btn--primary',
-          onClick: guard(busy(async () => {
-            const dump = await api('/host/export');
-            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const name = (jam.name || 'amplify-night').replace(/[^\w.-]+/g, '-').slice(0, 40);
-            downloadJson(`${name}-${stamp}.json`, dump);
-            sessionStorage.setItem('amplify.backupAt', String(Date.now()));
-            toast('Backup downloaded — keep the file private');
-          })),
-        }, 'Download backup'),
-        el('label', { class: 'btn btn--ghost', style: { cursor: 'pointer' } },
-          'Restore backup…',
-          el('input', {
-            type: 'file',
-            accept: 'application/json,.json',
-            style: { display: 'none' },
-            onChange: guard(busy(async (e) => {
-              const file = e.target.files?.[0];
-              e.target.value = '';
-              if (!file) return;
-              let dump;
-              try {
-                dump = JSON.parse(await file.text());
-              } catch {
-                return toast('That file is not valid JSON', 'error');
-              }
-              if (!confirm(`Replace the live night with “${dump.night?.jam?.name || dump.jam?.name || 'this backup'}”? Everyone’s current sheet will change.`)) {
-                return;
-              }
-              await api('/host/import', { method: 'POST', body: dump });
-              toast('Night restored');
-              refresh(true);
-            }, 'host-import')),
-          }),
+    el('div', { class: 'stack' },
+      el('section', { class: 'card stack', dataset: { tour: 'host-ops' } },
+        el('div', { class: 'card__head' }, el('h2', {}, 'Session report')),
+        el('p', { class: 'section-note' },
+          'A shareable PDF of tonight — roster, setlist, who played, and waiting or declined requests. No session tokens.'),
+        el('div', { class: 'row row--wrap' },
+          el('button', {
+            class: 'btn btn--primary',
+            onClick: guard(busy(async () => {
+              await downloadSessionReport();
+              toast('Session report downloaded');
+            }, 'host-report')),
+          }, 'Download PDF report'),
         ),
       ),
-    ),
 
-    el('section', { class: 'card stack' },
-      el('div', { class: 'card__head' }, el('h2', {}, 'Start over')),
-      el('p', { class: 'section-note' },
-        'Clearing the night needs a fresh backup download first — there is no undo.'),
-      el('div', { class: 'row row--wrap' },
-        confirmButton({
-          key: 'reset-turns',
-          label: 'Reset turn counts',
-          class: 'btn btn--danger',
-          confirmClass: 'btn btn--danger',
-          title: 'Reset turn counts? The roster and setlist stay.',
-          onConfirm: async () => {
-            await api('/host/reset', { method: 'POST', body: { mode: 'turns' } });
-            toast('Turns reset');
-          },
-          onChange: draw,
-        }),
-        confirmButton({
-          key: 'clear-night',
-          label: 'Clear the night',
-          class: 'btn btn--danger',
-          confirmClass: 'btn btn--danger',
-          title: 'Clear the whole night — every sign-up and song?',
-          onConfirm: async () => {
-            const backedUpAt = Number(sessionStorage.getItem('amplify.backupAt') || 0);
-            if (!backedUpAt || Date.now() - backedUpAt > 15 * 60 * 1000) {
+      el('section', { class: 'card stack' },
+        el('div', { class: 'card__head' }, el('h2', {}, 'Backup')),
+        el('p', { class: 'section-note' },
+          'Download the whole night (roster, songs, and player session tokens) so you can restore if Redis hiccups or someone clears too soon.'),
+        el('p', { class: 'section-note' },
+          'Treat the file like a password: anyone with it can restore those phones onto a night. Do not post it in chat or email.'),
+        el('div', { class: 'row row--wrap' },
+          el('button', {
+            class: 'btn btn--primary',
+            onClick: guard(busy(async () => {
               const dump = await api('/host/export');
               const stamp = new Date().toISOString().replace(/[:.]/g, '-');
               const name = (jam.name || 'amplify-night').replace(/[^\w.-]+/g, '-').slice(0, 40);
               downloadJson(`${name}-${stamp}.json`, dump);
               sessionStorage.setItem('amplify.backupAt', String(Date.now()));
-              toast('Backup downloaded — tap Clear again to wipe the night');
-              return;
-            }
-            await api('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true } });
-            sessionStorage.removeItem('amplify.backupAt');
-            toast('Fresh night');
-          },
-          onChange: draw,
-        }),
+              toast('Backup downloaded — keep the file private');
+            })),
+          }, 'Download backup'),
+          el('label', { class: 'btn btn--ghost', style: { cursor: 'pointer' } },
+            'Restore backup…',
+            el('input', {
+              type: 'file',
+              accept: 'application/json,.json',
+              style: { display: 'none' },
+              onChange: guard(busy(async (e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (!file) return;
+                let dump;
+                try {
+                  dump = JSON.parse(await file.text());
+                } catch {
+                  return toast('That file is not valid JSON', 'error');
+                }
+                if (!confirm(`Replace the live night with “${dump.night?.jam?.name || dump.jam?.name || 'this backup'}”? Everyone’s current sheet will change.`)) {
+                  return;
+                }
+                await api('/host/import', { method: 'POST', body: dump });
+                toast('Night restored');
+                refresh(true);
+              }, 'host-import')),
+            }),
+          ),
+        ),
+      ),
+
+      el('section', { class: 'card stack' },
+        el('div', { class: 'card__head' }, el('h2', {}, 'Start over')),
+        el('p', { class: 'section-note' },
+          'Clearing the night needs a fresh backup download first — there is no undo.'),
+        el('div', { class: 'row row--wrap' },
+          confirmButton({
+            key: 'reset-turns',
+            label: 'Reset turn counts',
+            class: 'btn btn--danger',
+            confirmClass: 'btn btn--danger',
+            title: 'Reset turn counts? The roster and setlist stay.',
+            onConfirm: async () => {
+              await api('/host/reset', { method: 'POST', body: { mode: 'turns' } });
+              toast('Turns reset');
+            },
+            onChange: draw,
+          }),
+          confirmButton({
+            key: 'clear-night',
+            label: 'Clear the night',
+            class: 'btn btn--danger',
+            confirmClass: 'btn btn--danger',
+            title: 'Clear the whole night — every sign-up and song?',
+            onConfirm: async () => {
+              const backedUpAt = Number(sessionStorage.getItem('amplify.backupAt') || 0);
+              if (!backedUpAt || Date.now() - backedUpAt > 15 * 60 * 1000) {
+                const dump = await api('/host/export');
+                const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const name = (jam.name || 'amplify-night').replace(/[^\w.-]+/g, '-').slice(0, 40);
+                downloadJson(`${name}-${stamp}.json`, dump);
+                sessionStorage.setItem('amplify.backupAt', String(Date.now()));
+                toast('Backup downloaded — tap Clear again to wipe the night');
+                return;
+              }
+              await api('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true } });
+              sessionStorage.removeItem('amplify.backupAt');
+              toast('Fresh night');
+            },
+            onChange: draw,
+          }),
+        ),
       ),
     ),
   );
