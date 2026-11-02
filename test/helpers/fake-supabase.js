@@ -10,6 +10,7 @@ import { URL } from 'node:url';
 export function startFakeSupabase() {
   /** @type {Map<string, object>} key = jam_id + '\\0' + id */
   const rows = new Map();
+  let failWrites = 0;
 
   function keyOf(jamId, id) {
     return `${jamId}\0${id}`;
@@ -44,6 +45,13 @@ export function startFakeSupabase() {
       res.end(payload == null ? '' : JSON.stringify(payload));
     };
 
+    if (req.method === 'POST' || req.method === 'DELETE') {
+      if (failWrites > 0) {
+        failWrites -= 1;
+        return json(500, { message: 'injected write failure' });
+      }
+    }
+
     if (req.method === 'GET') {
       let list = [...rows.values()];
       if (jamId) list = list.filter((r) => r.jam_id === jamId);
@@ -65,7 +73,6 @@ export function startFakeSupabase() {
       if (!jamId) return json(400, { message: 'jam_id required' });
       if (idNotIn?.startsWith('not.in.')) {
         const inner = idNotIn.slice('not.in.'.length);
-        // ( "a","b" ) or (a,b)
         const keep = new Set(
           inner
             .replace(/^\(/, '')
@@ -79,7 +86,6 @@ export function startFakeSupabase() {
         }
         return json(204, null);
       }
-      // Delete all for jam
       for (const [k, row] of rows) {
         if (row.jam_id === jamId) rows.delete(k);
       }
@@ -95,6 +101,8 @@ export function startFakeSupabase() {
       url: `http://127.0.0.1:${server.address().port}`,
       key: 'test-service-role',
       rows,
+      /** Next N POST/DELETE calls return 500. */
+      failNextWrites(n = 1) { failWrites = n; },
       listJam(jamId) {
         return [...rows.values()].filter((r) => r.jam_id === jamId);
       },

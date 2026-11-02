@@ -97,6 +97,15 @@ test('mergeUsers lets local CAS rows override remote on the same id', () => {
   assert.ok(merged.some((u) => u.id === 'b'));
 });
 
+test('mergeUsers drops tombstoned ids so deletes cannot resurrect', () => {
+  const merged = mergeUsers(
+    [],
+    [{ id: 'gone', username: 'x', displayName: 'X', passwordHash: 'h', passwordSalt: 's', role: 'player', disabled: false, createdAt: 1, instruments: [] }],
+    ['gone'],
+  );
+  assert.equal(merged.length, 0);
+});
+
 test('health reports Supabase account sync without secrets', async () => {
   const res = await call('/health');
   assert.equal(res.status, 200);
@@ -196,6 +205,68 @@ test('accounts survive wiping the night blob when Supabase still has them', asyn
     }).then(async (r) => ({ status: r.status, data: await r.json() }));
     assert.equal(login.status, 200, JSON.stringify(login.data));
     assert.equal(login.data.username, 'alex');
+  } finally {
+    child.kill();
+  }
+});
+
+test('a failed Supabase delete does not resurrect the account on reload', async () => {
+  const listed = await call('/host/users', { host: true });
+  const victim = listed.data.users.find((u) => u.username === 'alex');
+  assert.ok(victim);
+
+  // replaceAll does POST then DELETE — fail enough writes that sync cannot finish.
+  supabase.failNextWrites(6);
+  const deleted = await call(`/host/users/${victim.id}`, { method: 'DELETE', host: true });
+  // Blob delete may still return 503 after CAS if remote sync throws.
+  assert.ok(deleted.status === 200 || deleted.status === 503, JSON.stringify(deleted.data));
+
+  // Remote still has the row (writes failed), but tombstone must keep them out.
+  assert.ok(supabase.listJam('amplify-test').some((r) => r.id === victim.id));
+
+  const port2 = 4300 + Math.floor(Math.random() * 200);
+  const base2 = `http://127.0.0.1:${port2}`;
+  const child = spawn(process.execPath, [join(ROOT, 'server.js')], {
+    env: {
+      PATH: process.env.PATH,
+      PORT: String(port2),
+      DATA_DIR: dataDir,
+      SUPABASE_URL: supabase.url,
+      SUPABASE_SERVICE_ROLE_KEY: supabase.key,
+      SUPABASE_JAM_ID: 'amplify-test',
+      HOST_KEY: hostKey,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('second server failed')), 10000);
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch(`${base2}/api/health`);
+        if (res.ok) {
+          clearInterval(poll);
+          clearTimeout(timer);
+          resolve();
+        }
+      } catch { /* wait */ }
+    }, 40);
+    child.stderr.on('data', (c) => process.stderr.write(c));
+  });
+
+  try {
+    const again = await fetch(`${base2}/api/host/users`, {
+      headers: { 'x-host-token': hostKey },
+    }).then(async (r) => ({ status: r.status, data: await r.json() }));
+    assert.equal(again.status, 200);
+    assert.ok(!again.data.users.some((u) => u.id === victim.id));
+
+    const login = await fetch(`${base2}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'alex', password: 'password1' }),
+    }).then(async (r) => ({ status: r.status, data: await r.json() }));
+    assert.equal(login.status, 401);
   } finally {
     child.kill();
   }

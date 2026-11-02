@@ -93,7 +93,9 @@ export class SupabaseUsers {
       const detail = typeof data === 'object' && data && (data.message || data.error || data.hint)
         ? (data.message || data.error || data.hint)
         : text || res.status;
-      const err = new Error(`Supabase accounts rejected ${method} ${path}: ${detail}`);
+      // Keep PostgREST text on the server — clients only see a generic 503.
+      console.error(`Supabase accounts ${method} ${path} failed:`, detail);
+      const err = new Error('Account storage is unavailable');
       err.status = 503;
       throw err;
     }
@@ -154,15 +156,17 @@ export class SupabaseUsers {
  * Merge local (CAS night blob) and remote (Supabase) account lists.
  * Local rows win on id collision — they rode the compare-and-set that just
  * committed. Remote-only rows are kept so a Redis wipe recovery is not lost
- * when another instance still has a stale empty blob.
+ * when another instance still has a stale empty blob. Ids in `deletedIds` are
+ * dropped so a failed remote delete cannot resurrect a removed account.
  */
-export function mergeUsers(localUsers, remoteUsers) {
+export function mergeUsers(localUsers, remoteUsers, deletedIds = []) {
+  const deleted = new Set(deletedIds || []);
   const byId = new Map();
   for (const u of remoteUsers || []) {
-    if (u?.id) byId.set(u.id, u);
+    if (u?.id && !deleted.has(u.id)) byId.set(u.id, u);
   }
   for (const u of localUsers || []) {
-    if (u?.id) byId.set(u.id, u);
+    if (u?.id && !deleted.has(u.id)) byId.set(u.id, u);
   }
   return [...byId.values()].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
 }
@@ -200,20 +204,28 @@ export class UsersSyncedBackend {
     }
 
     const localUsers = Array.isArray(state.users) ? state.users : [];
+    const deletedIds = Array.isArray(state.deletedUserIds) ? state.deletedUserIds : [];
     if (remoteUsers.length === 0 && localUsers.length > 0) {
       // First connect (or empty project): seed Supabase from the night blob.
-      await this.remote.replaceAll(localUsers);
+      try {
+        await this.remote.replaceAll(localUsers);
+      } catch {
+        // Supabase unavailable; sign-in continues from the blob. Next load retries.
+      }
       state.users = localUsers;
       return { state, version };
     }
 
-    const merged = mergeUsers(localUsers, remoteUsers);
+    const merged = mergeUsers(localUsers, remoteUsers, deletedIds);
     state.users = merged;
 
     // Heal a prior save where Redis CAS landed but the Supabase push failed.
-    if (usersSignature(merged) !== usersSignature(remoteUsers)) {
+    // Prefer the merged (tombstone-filtered) list so deletes still propagate.
+    if (usersSignature(merged) !== usersSignature(remoteUsers.filter((u) => !deletedIds.includes(u.id)))) {
       try {
         await this.remote.replaceAll(merged);
+        // Remote matches the tombstone-filtered list — clear spent tombstones.
+        state.deletedUserIds = [];
       } catch {
         // Leave merged in memory for this request; next save retries.
       }
