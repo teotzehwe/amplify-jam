@@ -506,7 +506,7 @@ export function adminTourSteps() {
     },
     {
       title: 'Share the sign-up',
-      body: 'Show this QR (or print it) so phones can join. Keep the host link to yourself — it carries the key that unlocks this dashboard.',
+      body: 'Show this QR (or print it) so phones can join. Keep the host console to yourself — only admin accounts can sign in here.',
       selector: '[data-tour="host-share"]',
       tab: 'settings',
     },

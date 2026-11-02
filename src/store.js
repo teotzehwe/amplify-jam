@@ -45,9 +45,16 @@ function defaultState(hostKey) {
       ],
     },
     hostToken: hostKey || newId(),
+    // Per-admin console sessions issued by /host/login and /host/setup. The
+    // shared hostToken still works (env HOST_KEY / legacy links); sessions let
+    // us revoke one admin without rotating the env key.
+    hostSessions: [],
     // Registered accounts (username + password) the host manages. Separate from
     // tonight's roster: a user signs in to claim or resume a player seat.
     users: [],
+    // Ids removed via /host/users — kept so a lagging Supabase row cannot
+    // reappear through the dual-write merge after a failed remote delete.
+    deletedUserIds: [],
     players: [],
     songs: [],
     rounds: [],
@@ -89,9 +96,21 @@ export function migrate(state, hostKey) {
     passwordHash: u.passwordHash || '',
     passwordSalt: u.passwordSalt || '',
     instruments: Array.isArray(u.instruments) ? u.instruments : [],
+    role: u.role === 'admin' ? 'admin' : 'player',
     disabled: Boolean(u.disabled),
     createdAt: u.createdAt || Date.now(),
   })).filter((u) => u.id && u.username && u.passwordHash && u.passwordSalt);
+
+  out.hostSessions = (state.hostSessions || []).map((s) => ({
+    id: s.id,
+    userId: s.userId,
+    token: s.token,
+    createdAt: s.createdAt || Date.now(),
+  })).filter((s) => s.id && s.userId && s.token);
+
+  out.deletedUserIds = [...new Set(
+    (state.deletedUserIds || []).map((id) => String(id || '').trim()).filter(Boolean),
+  )].slice(0, 500);
 
   // A song from before approval existed was already visible to the whole room,
   // so it is approved. Hiding songs people had signed up for would be a worse
@@ -346,19 +365,29 @@ export class Store {
    */
   publicState() {
     // lastHostExportAt is a server-side gate for clearing the night — not for phones.
-    // users stay server-side except via /api/host/users (hashes never leave).
-    const { hostToken, lastHostExportAt, users, ...rest } = this.state;
+    // users / hostSessions / deletedUserIds stay server-side.
+    const { hostToken, lastHostExportAt, users, hostSessions, deletedUserIds, ...rest } = this.state;
+    const active = Array.isArray(users) ? users.filter((u) => !u.disabled) : [];
+    const needsHostSetup = !active.some((u) => u.role === 'admin');
     return {
       ...rest,
       version: this.version,
       players: rest.players.filter((p) => !p.removed).map(({ token, ...p }) => p),
       // Phones only need to know accounts exist so the sign-in form can show.
-      hasUsers: Array.isArray(users) && users.some((u) => !u.disabled),
+      hasUsers: active.length > 0,
+      // Host console shows first-admin setup until someone can sign in there.
+      needsHostSetup,
+      // Upgraded nights / env-locked deploys need the existing host key to claim setup.
+      setupRequiresHostKey: needsHostSetup && (
+        (Array.isArray(users) && users.length > 0) || Boolean(process.env.HOST_KEY)
+      ),
     };
   }
 
   isHost(token) {
-    return Boolean(token) && token === this.state.hostToken;
+    if (!token) return false;
+    if (token === this.state.hostToken) return true;
+    return (this.state.hostSessions || []).some((s) => s.token === token);
   }
 
   playerByToken(token) {
@@ -374,6 +403,14 @@ export class Store {
 
   userById(id) {
     return (this.state.users || []).find((u) => u.id === id) || null;
+  }
+
+  adminUsers() {
+    return (this.state.users || []).filter((u) => u.role === 'admin' && !u.disabled);
+  }
+
+  hasAdmins() {
+    return this.adminUsers().length > 0;
   }
 }
 

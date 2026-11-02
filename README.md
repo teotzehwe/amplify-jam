@@ -24,14 +24,14 @@ No install step, no dependencies, no internet. Node 18 or newer.
 ♪  Amplify Open Jam
 
    Players sign up   http://192.168.1.24:3000/
-   Host console      http://192.168.1.24:3000/host?k=6f2a…
+   Host console      http://192.168.1.24:3000/host
    Stage display     http://192.168.1.24:3000/board
 ```
 
 Share the sign-up link. The host console's Settings tab shows it as a QR code
 you can print for the stage, and the stage display shows the same code between
-songs. Keep the host link to yourself — it carries the key that unlocks the
-console.
+songs. Open `/host` and create an admin account (or sign in with one) — keep
+those credentials to yourself.
 
 ## Three screens
 

@@ -346,12 +346,14 @@ function clearLoginFailures(ip, username) {
 }
 
 /**
- * Sign in with a host-created account. Resumes tonight's player seat for that
- * user (or opens a fresh one) and rotates the session token.
+ * Shared password check with throttle + dummy-hash timing.
+ * Returns the user when credentials match an enabled account.
+ * Pass `roles` (e.g. ['admin']) to require a role without revealing why a
+ * valid musician password still fails host sign-in.
  */
-route('POST', /^\/api\/auth\/login$/, async (ctx) => {
-  const username = parseUsername(ctx.body.username);
-  const password = String(ctx.body.password ?? '');
+async function authenticateAccount(ctx, usernameRaw, passwordRaw, { roles = null } = {}) {
+  const username = parseUsername(usernameRaw);
+  const password = String(passwordRaw ?? '');
   const ip = clientIp(ctx);
   beginLoginAttempt(ip, username);
 
@@ -361,11 +363,60 @@ route('POST', /^\/api\/auth\/login$/, async (ctx) => {
   const salt = user?.passwordSalt || DUMMY_CREDENTIAL.salt;
   const hash = user?.passwordHash || DUMMY_CREDENTIAL.hash;
   const passwordOk = await verifyPasswordAsync(password, salt, hash);
-  if (!user || user.disabled || !passwordOk) {
+  const roleOk = !roles || (user && roles.includes(user.role));
+  if (!user || user.disabled || !passwordOk || !roleOk) {
     finishLoginFailure(ip, username);
     throw new HttpError(401, 'Username or password is wrong');
   }
   clearLoginFailures(ip, username);
+  return user;
+}
+
+function parseRole(value, fallback = 'player') {
+  if (value == null || value === '') return fallback;
+  const role = String(value).toLowerCase();
+  if (role !== 'admin' && role !== 'player') throw bad('Role must be admin or player');
+  return role;
+}
+
+function assertNotLastAdmin(user, { removing = false, demoting = false, disabling = false } = {}) {
+  if (user.role !== 'admin' || user.disabled) return;
+  const others = store.adminUsers().filter((u) => u.id !== user.id);
+  if (others.length > 0) return;
+  if (removing) throw bad('Create another admin before removing this one');
+  if (demoting) throw bad('Create another admin before demoting this one');
+  if (disabling) throw bad('Create another admin before disabling this one');
+}
+
+/** Issue a per-admin console session (returned as x-host-token after login/setup). */
+function issueHostSession(state, userId) {
+  if (!Array.isArray(state.hostSessions)) state.hostSessions = [];
+  const session = {
+    id: newId('hs'),
+    userId,
+    token: newId(),
+    createdAt: Date.now(),
+  };
+  state.hostSessions.push(session);
+  return session.token;
+}
+
+/**
+ * Drop console sessions for an admin who lost access. Login/setup issue
+ * per-admin session tokens (not the shared hostToken), so revoking those
+ * sessions cuts off demoted admins even when HOST_KEY is fixed by the env
+ * and cannot be rotated.
+ */
+function revokeAdminHostAccess(state, userId) {
+  state.hostSessions = (state.hostSessions || []).filter((s) => s.userId !== userId);
+}
+
+/**
+ * Sign in with a host-created account. Resumes tonight's player seat for that
+ * user (or opens a fresh one) and rotates the session token.
+ */
+route('POST', /^\/api\/auth\/login$/, async (ctx) => {
+  const user = await authenticateAccount(ctx, ctx.body.username, ctx.body.password);
 
   let playerId;
   let token;
@@ -401,6 +452,67 @@ route('POST', /^\/api\/auth\/login$/, async (ctx) => {
   return { id: playerId, token, userId: user.id, username: user.username };
 });
 
+/**
+ * First-time host setup: create the initial admin when none exist yet.
+ * Open only on a truly empty night with no env HOST_KEY. Upgraded nights that
+ * already have musician accounts (or a configured key) still need the host key
+ * so a visitor cannot claim the console and export password hashes.
+ */
+route('POST', /^\/api\/host\/setup$/, (ctx) => {
+  if (store.hasAdmins()) {
+    throw bad('An admin account already exists — sign in instead');
+  }
+  const hasExistingUsers = (store.state.users || []).length > 0;
+  if (hasExistingUsers || process.env.HOST_KEY) requireHost(ctx);
+  const username = parseUsername(ctx.body.username);
+  if (store.userByUsername(username)) throw bad('That username is already taken');
+  const displayName = str(ctx.body.displayName || username, { max: 60, field: 'Display name', required: true });
+  const password = parseNewPassword(ctx.body.password);
+  const { salt, hash } = hashPassword(password);
+  const user = {
+    id: newId('usr'),
+    username,
+    displayName,
+    passwordHash: hash,
+    passwordSalt: salt,
+    instruments: [],
+    role: 'admin',
+    disabled: false,
+    createdAt: Date.now(),
+  };
+  let sessionToken;
+  store.update((state) => {
+    if (!Array.isArray(state.users)) state.users = [];
+    state.users.push(user);
+    sessionToken = issueHostSession(state, user.id);
+  });
+  return {
+    token: sessionToken,
+    user: publicUser(user),
+  };
+});
+
+/**
+ * Admin sign-in for the host console. Returns a per-admin session token so
+ * demoting/disabling that admin can revoke console access without rotating an
+ * environment-supplied HOST_KEY.
+ */
+route('POST', /^\/api\/host\/login$/, async (ctx) => {
+  const user = await authenticateAccount(ctx, ctx.body.username, ctx.body.password, {
+    roles: ['admin'],
+  });
+  let sessionToken;
+  store.update((state) => {
+    sessionToken = issueHostSession(state, user.id);
+  });
+  return {
+    token: sessionToken,
+    username: user.username,
+    displayName: user.displayName,
+    userId: user.id,
+  };
+});
+
 route('GET', /^\/api\/host\/users$/, (ctx) => {
   requireHost(ctx);
   return {
@@ -414,6 +526,7 @@ route('POST', /^\/api\/host\/users$/, (ctx) => {
   if (store.userByUsername(username)) throw bad('That username is already taken');
   const displayName = str(ctx.body.displayName || username, { max: 60, field: 'Display name', required: true });
   const password = parseNewPassword(ctx.body.password);
+  const role = parseRole(ctx.body.role, 'player');
   const instruments = ctx.body.instruments != null
     ? parseInstruments(ctx.body.instruments)
     : [];
@@ -425,12 +538,14 @@ route('POST', /^\/api\/host\/users$/, (ctx) => {
     passwordHash: hash,
     passwordSalt: salt,
     instruments,
+    role,
     disabled: false,
     createdAt: Date.now(),
   };
   store.update((state) => {
     if (!Array.isArray(state.users)) state.users = [];
     state.users.push(user);
+    state.deletedUserIds = (state.deletedUserIds || []).filter((id) => id !== user.id);
   });
   return { user: publicUser(user) };
 });
@@ -447,18 +562,26 @@ route('PATCH', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
     if (clash && clash.id !== user.id) throw bad('That username is already taken');
   }
 
-  store.update(() => {
+  const nextRole = body.role != null ? parseRole(body.role, user.role) : user.role;
+  const nextDisabled = body.disabled != null ? Boolean(body.disabled) : user.disabled;
+  const demoting = user.role === 'admin' && nextRole !== 'admin';
+  const disabling = !user.disabled && nextDisabled;
+  assertNotLastAdmin(user, { demoting, disabling });
+
+  store.update((state) => {
     if (body.username != null) user.username = parseUsername(body.username);
     if (body.displayName != null) {
       user.displayName = str(body.displayName, { max: 60, field: 'Display name', required: true });
     }
     if (body.instruments != null) user.instruments = parseInstruments(body.instruments);
-    if (body.disabled != null) user.disabled = Boolean(body.disabled);
+    if (body.role != null) user.role = nextRole;
+    if (body.disabled != null) user.disabled = nextDisabled;
     if (body.password != null && body.password !== '') {
       const { salt, hash } = hashPassword(parseNewPassword(body.password));
       user.passwordSalt = salt;
       user.passwordHash = hash;
     }
+    if (demoting || disabling) revokeAdminHostAccess(state, user.id);
   });
   return { user: publicUser(user) };
 });
@@ -467,12 +590,18 @@ route('DELETE', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
   requireHost(ctx);
   const user = store.userById(ctx.params[0]);
   if (!user) throw new HttpError(404, 'User not found');
+  assertNotLastAdmin(user, { removing: true });
+  const wasAdmin = user.role === 'admin' && !user.disabled;
   store.update((state) => {
     state.users = (state.users || []).filter((u) => u.id !== user.id);
+    // Tombstone so a stale Supabase row cannot resurrect the account on load.
+    if (!Array.isArray(state.deletedUserIds)) state.deletedUserIds = [];
+    if (!state.deletedUserIds.includes(user.id)) state.deletedUserIds.push(user.id);
     // Keep tonight's roster rows; just unlink the account.
     for (const p of state.players) {
       if (p.userId === user.id) p.userId = null;
     }
+    if (wasAdmin) revokeAdminHostAccess(state, user.id);
   });
   return { ok: true };
 });
@@ -834,6 +963,10 @@ route('GET', /^\/api\/host\/export$/, (ctx) => {
   });
   const snap = structuredClone(store.state);
   delete snap.lastHostExportAt;
+  // Host credentials are not restore material — import keeps the live host
+  // token / sessions so a backup cannot revive revoked console access.
+  delete snap.hostToken;
+  delete snap.hostSessions;
   return {
     format: 'amplify-night-v1',
     exportedAt,
@@ -915,10 +1048,15 @@ route('POST', /^\/api\/host\/import$/, (ctx) => {
   const night = body.night || body;
   assertNightBackup(night);
   store.update((state) => {
-    // Keep the live host key (env or current night) — a backup must not
-    // silently swap who can open the console. migrate() fills older shapes.
+    // Keep the live host key and console sessions — a backup must not
+    // silently swap who can open the console or revive revoked sessions.
     const hostToken = state.hostToken;
-    const next = migrate(structuredClone(night), hostToken);
+    const liveSessions = state.hostSessions || [];
+    const backup = structuredClone(night);
+    delete backup.hostSessions;
+    delete backup.hostToken;
+    const next = migrate(backup, hostToken);
+    next.hostSessions = liveSessions;
     for (const key of Object.keys(state)) delete state[key];
     Object.assign(state, next);
   });
