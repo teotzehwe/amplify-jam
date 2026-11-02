@@ -22,7 +22,7 @@ const songDraft = { title: '', artist: '' };
 /** Optional note while declining a request — survives the 2.5s poll redraw. */
 let declineDraft = null; // { songId, reason }
 /** Admin sign-in / first-admin setup drafts for the host gate. */
-const gateDraft = { username: '', displayName: '', password: '' };
+const gateDraft = { username: '', displayName: '', password: '', hostKey: '' };
 let calloutOpen = false;
 let refresh = () => {};
 
@@ -140,12 +140,14 @@ function enterConsole(token) {
   gateDraft.username = '';
   gateDraft.displayName = '';
   gateDraft.password = '';
+  gateDraft.hostKey = '';
   loadUsers().catch(() => {});
   refresh(true);
 }
 
 function gate() {
   const needsSetup = Boolean(state?.needsHostSetup);
+  const needsHostKey = Boolean(needsSetup && state?.setupRequiresHostKey);
 
   const signIn = guard(busy(async () => {
     const username = gateDraft.username.trim() || $('#gate-username')?.value.trim();
@@ -170,6 +172,7 @@ function gate() {
     const username = gateDraft.username.trim() || $('#gate-username')?.value.trim();
     const displayName = gateDraft.displayName.trim() || $('#gate-displayname')?.value.trim() || username;
     const password = gateDraft.password || $('#gate-password')?.value || '';
+    const hostKey = gateDraft.hostKey.trim() || $('#gate-hostkey')?.value.trim() || '';
     if (!username) {
       shake($('#gate-username')?.closest('.field') || $('#gate-username'));
       return toast('Pick a username', 'error');
@@ -178,10 +181,16 @@ function gate() {
       shake($('#gate-password')?.closest('.field') || $('#gate-password'));
       return toast('Password needs at least 6 characters', 'error');
     }
+    if (needsHostKey && !hostKey) {
+      shake($('#gate-hostkey')?.closest('.field') || $('#gate-hostkey'));
+      return toast('Enter the host key for this night', 'error');
+    }
+    // Upgraded / env-locked nights require x-host-token; stash it so api() sends it.
+    if (hostKey) tokens.host = hostKey;
     const data = await api('/host/setup', {
       method: 'POST',
       body: { username, displayName, password },
-      as: 'player',
+      as: needsHostKey ? 'auto' : 'player',
     });
     toast('Admin account created');
     enterConsole(data.token);
@@ -196,7 +205,9 @@ function gate() {
       ),
       el('p', { class: 'section-note' },
         needsSetup
-          ? 'This night has no admin yet. Create one to open the console — you will use this username and password next time.'
+          ? (needsHostKey
+            ? 'This night already has a host key. Enter it below, then create the first admin account.'
+            : 'This night has no admin yet. Create one to open the console — you will use this username and password next time.')
           : 'Sign in with an admin account. Musician passwords on the phone do not unlock this console unless that account is marked Admin.'),
       el('div', { class: 'field' },
         el('label', { for: 'gate-username' }, 'Username'),
@@ -235,6 +246,20 @@ function gate() {
           onKeydown: (e) => e.key === 'Enter' && (needsSetup ? createAdmin(e) : signIn(e)),
         }),
       ),
+      needsHostKey
+        ? el('div', { class: 'field' },
+            el('label', { for: 'gate-hostkey' }, 'Host key'),
+            el('input', {
+              id: 'gate-hostkey',
+              type: 'password',
+              autocomplete: 'off',
+              spellcheck: 'false',
+              value: gateDraft.hostKey,
+              onInput: (e) => { gateDraft.hostKey = e.target.value; },
+              onKeydown: (e) => e.key === 'Enter' && createAdmin(e),
+            }),
+          )
+        : null,
       el('button', {
         class: 'btn btn--primary btn--block',
         onClick: needsSetup ? createAdmin : signIn,

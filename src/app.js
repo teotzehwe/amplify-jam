@@ -388,6 +388,29 @@ function assertNotLastAdmin(user, { removing = false, demoting = false, disablin
   if (disabling) throw bad('Create another admin before disabling this one');
 }
 
+/** Issue a per-admin console session (returned as x-host-token after login/setup). */
+function issueHostSession(state, userId) {
+  if (!Array.isArray(state.hostSessions)) state.hostSessions = [];
+  const session = {
+    id: newId('hs'),
+    userId,
+    token: newId(),
+    createdAt: Date.now(),
+  };
+  state.hostSessions.push(session);
+  return session.token;
+}
+
+/**
+ * Drop console sessions for an admin who lost access. Login/setup issue
+ * per-admin session tokens (not the shared hostToken), so revoking those
+ * sessions cuts off demoted admins even when HOST_KEY is fixed by the env
+ * and cannot be rotated.
+ */
+function revokeAdminHostAccess(state, userId) {
+  state.hostSessions = (state.hostSessions || []).filter((s) => s.userId !== userId);
+}
+
 /**
  * Sign in with a host-created account. Resumes tonight's player seat for that
  * user (or opens a fresh one) and rotates the session token.
@@ -431,12 +454,16 @@ route('POST', /^\/api\/auth\/login$/, async (ctx) => {
 
 /**
  * First-time host setup: create the initial admin when none exist yet.
- * No host token required — this is how the console gets its first owner.
+ * Open only on a truly empty night with no env HOST_KEY. Upgraded nights that
+ * already have musician accounts (or a configured key) still need the host key
+ * so a visitor cannot claim the console and export password hashes.
  */
 route('POST', /^\/api\/host\/setup$/, (ctx) => {
   if (store.hasAdmins()) {
     throw bad('An admin account already exists — sign in instead');
   }
+  const hasExistingUsers = (store.state.users || []).length > 0;
+  if (hasExistingUsers || process.env.HOST_KEY) requireHost(ctx);
   const username = parseUsername(ctx.body.username);
   if (store.userByUsername(username)) throw bad('That username is already taken');
   const displayName = str(ctx.body.displayName || username, { max: 60, field: 'Display name', required: true });
@@ -453,26 +480,33 @@ route('POST', /^\/api\/host\/setup$/, (ctx) => {
     disabled: false,
     createdAt: Date.now(),
   };
+  let sessionToken;
   store.update((state) => {
     if (!Array.isArray(state.users)) state.users = [];
     state.users.push(user);
+    sessionToken = issueHostSession(state, user.id);
   });
   return {
-    token: store.state.hostToken,
+    token: sessionToken,
     user: publicUser(user),
   };
 });
 
 /**
- * Admin sign-in for the host console. Returns the night's host session token
- * so the existing x-host-token API keeps working after password login.
+ * Admin sign-in for the host console. Returns a per-admin session token so
+ * demoting/disabling that admin can revoke console access without rotating an
+ * environment-supplied HOST_KEY.
  */
 route('POST', /^\/api\/host\/login$/, async (ctx) => {
   const user = await authenticateAccount(ctx, ctx.body.username, ctx.body.password, {
     roles: ['admin'],
   });
+  let sessionToken;
+  store.update((state) => {
+    sessionToken = issueHostSession(state, user.id);
+  });
   return {
-    token: store.state.hostToken,
+    token: sessionToken,
     username: user.username,
     displayName: user.displayName,
     userId: user.id,
@@ -529,12 +563,11 @@ route('PATCH', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
 
   const nextRole = body.role != null ? parseRole(body.role, user.role) : user.role;
   const nextDisabled = body.disabled != null ? Boolean(body.disabled) : user.disabled;
-  assertNotLastAdmin(user, {
-    demoting: user.role === 'admin' && nextRole !== 'admin',
-    disabling: !user.disabled && nextDisabled,
-  });
+  const demoting = user.role === 'admin' && nextRole !== 'admin';
+  const disabling = !user.disabled && nextDisabled;
+  assertNotLastAdmin(user, { demoting, disabling });
 
-  store.update(() => {
+  store.update((state) => {
     if (body.username != null) user.username = parseUsername(body.username);
     if (body.displayName != null) {
       user.displayName = str(body.displayName, { max: 60, field: 'Display name', required: true });
@@ -547,6 +580,7 @@ route('PATCH', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
       user.passwordSalt = salt;
       user.passwordHash = hash;
     }
+    if (demoting || disabling) revokeAdminHostAccess(state, user.id);
   });
   return { user: publicUser(user) };
 });
@@ -556,12 +590,14 @@ route('DELETE', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
   const user = store.userById(ctx.params[0]);
   if (!user) throw new HttpError(404, 'User not found');
   assertNotLastAdmin(user, { removing: true });
+  const wasAdmin = user.role === 'admin' && !user.disabled;
   store.update((state) => {
     state.users = (state.users || []).filter((u) => u.id !== user.id);
     // Keep tonight's roster rows; just unlink the account.
     for (const p of state.players) {
       if (p.userId === user.id) p.userId = null;
     }
+    if (wasAdmin) revokeAdminHostAccess(state, user.id);
   });
   return { ok: true };
 });

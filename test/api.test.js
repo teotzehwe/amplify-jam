@@ -726,7 +726,7 @@ test('admins set up the host console and musicians sign in on the phone', async 
     username: 'alex', displayName: 'Alex', password: 'secret1',
   } })).status, 403);
 
-  // First admin — no host token required.
+  // First admin on an empty night — no host token required.
   const setup = await call('/host/setup', {
     method: 'POST',
     body: { username: 'boss', displayName: 'Boss', password: 'secret1' },
@@ -736,6 +736,10 @@ test('admins set up the host console and musicians sign in on the phone', async 
   assert.equal(setup.data.user.role, 'admin');
   assert.equal(setup.data.user.passwordHash, undefined);
   assert.equal((await call('/state')).data.needsHostSetup, false);
+  // Session token unlocks host routes.
+  assert.equal((await call('/host/auth', {
+    method: 'POST', body: { token: setup.data.token },
+  })).status, 200);
 
   // Setup only works once.
   assert.equal((await call('/host/setup', {
@@ -748,7 +752,9 @@ test('admins set up the host console and musicians sign in on the phone', async 
     body: { username: 'boss', password: 'secret1' },
   });
   assert.equal(hostLogin.status, 200);
-  assert.equal(hostLogin.data.token, setup.data.token);
+  assert.ok(hostLogin.data.token);
+  // Each login gets its own session — not the shared night key.
+  assert.notEqual(hostLogin.data.token, setup.data.token);
 
   const created = await call('/host/users', {
     method: 'POST',
@@ -771,6 +777,7 @@ test('admins set up the host console and musicians sign in on the phone', async 
   const pub = await call('/state');
   assert.equal(pub.data.hasUsers, true);
   assert.equal(pub.data.users, undefined);
+  assert.equal(pub.data.hostSessions, undefined);
 
   assert.equal((await call('/auth/login', {
     method: 'POST', body: { username: 'alex', password: 'nope' },
@@ -802,6 +809,66 @@ test('admins set up the host console and musicians sign in on the phone', async 
   // Cannot remove the last admin.
   const boss = listed.data.users.find((u) => u.username === 'boss');
   assert.equal((await call(`/host/users/${boss.id}`, { method: 'DELETE', host: true })).status, 400);
+});
+
+test('setup on a night that already has users requires the host key', async () => {
+  // Simulate an upgraded night: musician accounts remain, but no admin role.
+  const exported = await call('/host/export', { host: true });
+  const night = structuredClone(exported.data.night);
+  assert.ok((night.users || []).length > 0, 'prior tests should have left accounts');
+  night.users = night.users.map((u) => ({ ...u, role: 'player' }));
+  night.hostSessions = [];
+  assert.equal((await call('/host/import', {
+    method: 'POST', body: { night }, host: true,
+  })).status, 200);
+
+  const state = await call('/state');
+  assert.equal(state.data.needsHostSetup, true);
+  assert.equal(state.data.setupRequiresHostKey, true);
+
+  assert.equal((await call('/host/setup', {
+    method: 'POST',
+    body: { username: 'claimer', displayName: 'Claim', password: 'secret1' },
+  })).status, 403);
+
+  const claimed = await call('/host/setup', {
+    method: 'POST',
+    body: { username: 'claimer', displayName: 'Claim', password: 'secret1' },
+    host: true,
+  });
+  assert.equal(claimed.status, 200, JSON.stringify(claimed.data));
+  assert.equal(claimed.data.user.role, 'admin');
+});
+
+test('demoting an admin revokes their console session', async () => {
+  // Keep an owner admin (shared host key) and a second admin with a login session.
+  const co = await call('/host/users', {
+    method: 'POST',
+    body: {
+      username: 'cohost', displayName: 'Co', password: 'secret1', role: 'admin',
+    },
+    host: true,
+  });
+  assert.equal(co.status, 200, JSON.stringify(co.data));
+
+  const session = await call('/host/login', {
+    method: 'POST',
+    body: { username: 'cohost', password: 'secret1' },
+  });
+  assert.equal(session.status, 200);
+  assert.equal((await call('/host/auth', {
+    method: 'POST', body: { token: session.data.token },
+  })).status, 200);
+
+  assert.equal((await call(`/host/users/${co.data.user.id}`, {
+    method: 'PATCH',
+    body: { role: 'player' },
+    host: true,
+  })).status, 200);
+
+  assert.equal((await call('/host/auth', {
+    method: 'POST', body: { token: session.data.token },
+  })).status, 403);
 });
 
 test('clearing the night keeps registered users', async () => {
