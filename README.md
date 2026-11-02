@@ -133,28 +133,37 @@ updates pushed over an event stream. Nothing to configure.
 **On Vercel** there is no disk and every request may hit a fresh instance, so
 it needs somewhere shared to keep the night:
 
-1. Use **one** Vercel project named **`amplify-jam`**, linked to the GitHub
-   repo `teotzehwe/amplify-jam`, with the apex domain `amplify-jam.vercel.app`.
-   Do not keep a second production project (e.g. `amplifyjam`) on the same
-   Redis — both URLs would mutate one night and deploys will drift.
-2. Add a Redis store — Storage → Marketplace → **Upstash for Redis**
-   (`upstash/upstash-kv`), not QStash, which is a message queue and sets none
-   of the variables below. Vercel fills in `KV_REST_API_URL` and
+There are two parallel setups — keep them separate:
+
+| Role | GitHub | Vercel | URL |
+| --- | --- | --- | --- |
+| **Production** | `teotzehwe/amplify-jam` | `amplify-jam` | `https://amplify-jam.vercel.app` |
+| **Testing** | `teotzehwe/amplify-jam-test` | `amplify-jam-test` | `https://amplify-jam-test.vercel.app` |
+
+1. Production: Vercel project **`amplify-jam`** ↔ GitHub `teotzehwe/amplify-jam`
+   ↔ apex `amplify-jam.vercel.app`.
+2. Testing: Vercel project **`amplify-jam-test`** ↔ GitHub
+   `teotzehwe/amplify-jam-test`. Set `KV_PREFIX=amplify-test` so a shared Redis
+   does not overwrite the live night. Use a different `HOST_KEY` from production.
+3. Add a Redis store — Storage → Marketplace → **Upstash for Redis**
+   (`upstash/upstash-kv`), not QStash. Vercel fills in `KV_REST_API_URL` and
    `KV_REST_API_TOKEN`; `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`
-   are accepted too.
-3. Set `HOST_KEY` to a secret of your choosing. Skip this and the host key is
+   are accepted too. Connect the store to each project that needs it (same
+   database is fine if prefixes differ).
+4. Set `HOST_KEY` to a secret of your choosing. Skip this and the host key is
    generated into Redis with no way for you to learn it — the host console
    stays locked. Prefer a long random string; change it only when you mean to
    lock out old host links.
-4. Keep **Deployment Protection / Vercel Authentication off** on the production
+5. Keep **Deployment Protection / Vercel Authentication off** on the production
    deployment musicians use, or phones will hit a login wall.
-5. Deploy from GitHub `main` (or `vercel --prod` against that same project).
-   `vercel.json` must keep the `/api/(.*)` → `/api/[...path]` route so host
-   endpoints like `/api/host/auth` work. No build step, no dependencies.
-6. Smoke-check `https://amplify-jam.vercel.app/api/health` (`hasKv` and
-   `hasHostKey` true) and open `/host?k=<HOST_KEY>`.
+6. Deploy from each repo’s `main`. `vercel.json` must keep the
+   `/api/(.*)` → `/api/[...path]` route so host endpoints like `/api/host/auth`
+   work. No build step, no dependencies.
+7. Smoke-check `/api/health` (`hasKv` and `hasHostKey` true) and open
+   `/host?k=<HOST_KEY>`.
 
 Canonical public URL: `https://amplify-jam.vercel.app`.
+Testing URL: `https://amplify-jam-test.vercel.app`.
 
 Amplify picks its backend from the environment: a key-value store when one is
 configured, the local file otherwise. Deploy without one and the API answers
