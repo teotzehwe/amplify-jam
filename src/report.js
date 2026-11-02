@@ -26,7 +26,18 @@ const instrumentList = (player) =>
     .filter(Boolean)
     .join(', ') || '—';
 
-const playerName = (players, id) => players.find((p) => p.id === id)?.name || id || '—';
+const playerName = (players, id, fallback) =>
+  fallback || players.find((p) => p.id === id)?.name || id || '—';
+
+function roundTitle(round, songs) {
+  if (round.songTitle) {
+    return [round.songTitle, round.songArtist].filter(Boolean).join(' — ');
+  }
+  if (round.songId == null) return 'Free jam';
+  const song = songs.find((s) => s.id === round.songId);
+  if (song) return [song.title, song.artist].filter(Boolean).join(' — ');
+  return round.songId || 'Free jam';
+}
 
 /**
  * @param {object} state live jam state (store.state)
@@ -79,10 +90,9 @@ export function buildSessionReport(state) {
     heading: 'Songs played',
     lines: rounds.length
       ? rounds.map((r, i) => {
-        const song = songs.find((s) => s.id === r.songId);
-        const title = song ? [song.title, song.artist].filter(Boolean).join(' — ') : r.songId;
+        const title = roundTitle(r, songs);
         const band = (r.picks || [])
-          .map((pick) => `${playerName(players, pick.playerId)} (${pick.instrument})`)
+          .map((pick) => `${playerName(players, pick.playerId, pick.playerName)} (${pick.instrument})`)
           .join(', ') || 'no picks recorded';
         return `${i + 1}. ${title} · ${fmtWhen(r.playedAt)} · ${band}`;
       })

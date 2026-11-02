@@ -31,6 +31,8 @@ let active = null;
 let tabController = null;
 let onPaint = null;
 let previouslyFocused = null;
+/** Cancel any in-flight highlight tracking after a smooth scroll. */
+let highlightTrack = 0;
 
 export function tourSeen(id) {
   try { return localStorage.getItem(storageKey(id)) === 'done'; }
@@ -74,6 +76,8 @@ export function stopTour({ markSeen = true } = {}) {
   if (!active) return;
   if (markSeen) markTourSeen(active.id);
   active = null;
+  highlightTrack += 1;
+  setPageInert(false);
   removeTourDom();
   const restore = previouslyFocused;
   previouslyFocused = null;
@@ -153,17 +157,73 @@ function removeTourDom() {
   document.documentElement.classList.remove('tour-active');
 }
 
+/** Keep the underlying page out of the tab order while the tour is open. */
+function setPageInert(on) {
+  const app = document.getElementById('app');
+  if (!app) return;
+  if (on) app.setAttribute('inert', '');
+  else app.removeAttribute('inert');
+}
+
+function tourFocusables(root) {
+  return [...root.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+    .filter((node) => node instanceof HTMLElement && node.offsetParent !== null);
+}
+
 function ensureRoot() {
   let root = document.getElementById('tour-root');
   if (root) return root;
   root = el('div', { id: 'tour-root', class: 'tour' });
   document.body.append(root);
   document.documentElement.classList.add('tour-active');
+  setPageInert(true);
   return root;
+}
+
+function applyHighlight(root, target) {
+  const hole = root.querySelector('.tour__hole');
+  const card = root.querySelector('.tour__card');
+  if (!card) return;
+  const rect = target?.getBoundingClientRect?.();
+  const hasTarget = Boolean(rect && rect.width > 0 && rect.height > 0);
+  if (hasTarget && hole) {
+    hole.style.top = `${Math.max(8, rect.top - 8)}px`;
+    hole.style.left = `${Math.max(8, rect.left - 8)}px`;
+    hole.style.width = `${rect.width + 16}px`;
+    hole.style.height = `${rect.height + 16}px`;
+    hole.hidden = false;
+  } else if (hole) {
+    hole.hidden = true;
+  }
+  placeCard(card, hasTarget ? rect : null);
+}
+
+function trackHighlight(root, target) {
+  const token = ++highlightTrack;
+  if (!target) {
+    applyHighlight(root, null);
+    return;
+  }
+  applyHighlight(root, target);
+  let frames = 0;
+  const tick = () => {
+    if (!active || token !== highlightTrack) return;
+    applyHighlight(root, target);
+    frames += 1;
+    // Smooth scroll can take a few hundred ms; keep the hole glued on.
+    if (frames < 45) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  const onScrollEnd = () => {
+    target.removeEventListener('scrollend', onScrollEnd);
+    if (active && token === highlightTrack) applyHighlight(root, target);
+  };
+  try { target.addEventListener('scrollend', onScrollEnd, { once: true }); } catch { /* older browsers */ }
 }
 
 function paintTour() {
   if (!active) {
+    setPageInert(false);
     removeTourDom();
     return;
   }
@@ -174,6 +234,7 @@ function paintTour() {
   }
 
   const root = ensureRoot();
+  setPageInert(true);
   const target = step.selector ? document.querySelector(step.selector) : null;
   const last = active.step === active.steps.length - 1;
   const n = active.steps.length;
@@ -236,18 +297,17 @@ function paintTour() {
     ),
   );
 
-  const hole = hasTarget
-    ? el('div', {
-        class: 'tour__hole',
-        style: {
-          top: `${Math.max(8, rect.top - 8)}px`,
-          left: `${Math.max(8, rect.left - 8)}px`,
-          width: `${rect.width + 16}px`,
-          height: `${rect.height + 16}px`,
-        },
-        'aria-hidden': 'true',
-      })
-    : null;
+  const hole = el('div', {
+    class: 'tour__hole',
+    hidden: !hasTarget,
+    style: hasTarget ? {
+      top: `${Math.max(8, rect.top - 8)}px`,
+      left: `${Math.max(8, rect.left - 8)}px`,
+      width: `${rect.width + 16}px`,
+      height: `${rect.height + 16}px`,
+    } : undefined,
+    'aria-hidden': 'true',
+  });
 
   // Scrim dims the page and blocks clicks, but does not dismiss — phones in a
   // busy room miss the Next button easily, and a tap on the dark area used to
@@ -259,6 +319,7 @@ function paintTour() {
   );
 
   placeCard(card, hasTarget ? rect : null);
+  trackHighlight(root, target);
 
   const nextBtn = $('#tour-next', root);
   nextBtn?.focus({ preventScroll: true });
@@ -311,12 +372,40 @@ if (typeof window !== 'undefined') {
     if (e.key === 'Escape') {
       e.preventDefault();
       stopTour({ markSeen: true });
-    } else if (e.key === 'ArrowRight') {
+      return;
+    }
+    if (e.key === 'ArrowRight') {
       e.preventDefault();
       go(1);
-    } else if (e.key === 'ArrowLeft') {
+      return;
+    }
+    if (e.key === 'ArrowLeft') {
       e.preventDefault();
       go(-1);
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const root = document.getElementById('tour-root');
+    if (!root) return;
+    const focusables = tourFocusables(root);
+    if (!focusables.length) {
+      e.preventDefault();
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const current = document.activeElement;
+    if (!root.contains(current)) {
+      e.preventDefault();
+      (e.shiftKey ? last : first).focus({ preventScroll: true });
+      return;
+    }
+    if (e.shiftKey && current === first) {
+      e.preventDefault();
+      last.focus({ preventScroll: true });
+    } else if (!e.shiftKey && current === last) {
+      e.preventDefault();
+      first.focus({ preventScroll: true });
     }
   });
 }
@@ -326,6 +415,7 @@ if (typeof window !== 'undefined') {
 /** Musician phone (`/`). `ctx` supplies live predicates. */
 export function playerTourSteps(ctx) {
   const signedIn = () => Boolean(ctx.you?.());
+  const signingIn = () => ctx.entryMode?.() === 'signin';
   return [
     {
       title: 'Welcome to Amplify',
@@ -335,7 +425,13 @@ export function playerTourSteps(ctx) {
       title: 'Tell us who you are',
       body: 'Add your name and tap every instrument you might grab tonight. You only do this once.',
       selector: '[data-tour="player-join"]',
-      when: () => !signedIn(),
+      when: () => !signedIn() && !signingIn(),
+    },
+    {
+      title: 'Sign in with your account',
+      body: 'Use the username and password the host set up for you. You land on the same seat if you were already here tonight.',
+      selector: '[data-tour="player-signin"]',
+      when: () => !signedIn() && signingIn(),
     },
     {
       title: 'You’re on the list',
@@ -373,8 +469,8 @@ export function adminTourSteps() {
       body: 'This console runs the night: share the join link, vet requests, staff each song by hand, call it out, and back up the sheet.',
     },
     {
-      title: 'Four tabs',
-      body: 'Now is the live song. Roster is fairness at a glance. Songs is the setlist and waiting requests. Settings is share, band, backups, and start-over.',
+      title: 'Five tabs',
+      body: 'Now is the live song. Roster is fairness at a glance. Songs is the setlist and waiting requests. Users is accounts and passwords. Settings is share, band, backups, and start-over.',
       selector: '[data-tour="host-tabs"]',
       tab: 'now',
     },

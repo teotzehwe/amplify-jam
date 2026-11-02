@@ -39,14 +39,26 @@ describe('playerTourSteps', () => {
   it('shows join steps before sign-in and profile steps after', () => {
     const before = playerTourSteps({
       you: () => null,
+      entryMode: () => 'join',
       suggestionsOn: () => true,
     }).filter((s) => !s.when || s.when());
 
     assert.ok(before.some((s) => s.selector === '[data-tour="player-join"]'));
+    assert.ok(!before.some((s) => s.selector === '[data-tour="player-signin"]'));
     assert.ok(!before.some((s) => s.selector === '[data-tour="player-songs"]'));
+
+    const signingIn = playerTourSteps({
+      you: () => null,
+      entryMode: () => 'signin',
+      suggestionsOn: () => true,
+    }).filter((s) => !s.when || s.when());
+
+    assert.ok(signingIn.some((s) => s.selector === '[data-tour="player-signin"]'));
+    assert.ok(!signingIn.some((s) => s.selector === '[data-tour="player-join"]'));
 
     const after = playerTourSteps({
       you: () => ({ id: 'p1' }),
+      entryMode: () => 'join',
       suggestionsOn: () => true,
     }).filter((s) => !s.when || s.when());
 
@@ -87,6 +99,8 @@ describe('adminTourSteps', () => {
     const tabs = [...new Set(steps.map((s) => s.tab).filter(Boolean))];
     assert.deepEqual(tabs.sort(), ['now', 'roster', 'settings', 'songs']);
     assert.ok(steps[0].title.toLowerCase().includes('admin'));
+    assert.ok(steps.some((s) => /five tabs/i.test(s.title)));
+    assert.ok(steps.some((s) => /Users is accounts/i.test(s.body)));
     assert.ok(steps.some((s) => /did not sign up/i.test(s.body)));
     assert.ok(steps.some((s) => /backup/i.test(s.body)));
   });

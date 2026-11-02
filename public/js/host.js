@@ -25,6 +25,39 @@ let hostKeyDraft = '';
 let calloutOpen = false;
 let refresh = () => {};
 
+/** Host-managed accounts — loaded with the console, kept outside redraw drafts. */
+let usersCache = [];
+let usersLoaded = false;
+/** Shared in-flight GET so live redraws do not stampede /host/users. */
+let usersLoading = null;
+/** After a failed fetch, wait for an explicit retry (re-enter tab / force). */
+let usersLoadFailed = false;
+const userDraft = { username: '', displayName: '', password: '' };
+/** Optional password reset field keyed by user id. */
+const passwordResets = new Map();
+
+async function loadUsers({ force = false } = {}) {
+  if (usersLoaded && !force) return usersCache;
+  if (usersLoading && !force) return usersLoading;
+  if (force) usersLoadFailed = false;
+  const request = api('/host/users')
+    .then((data) => {
+      usersCache = data.users || [];
+      usersLoaded = true;
+      usersLoadFailed = false;
+      return usersCache;
+    })
+    .catch((err) => {
+      usersLoadFailed = true;
+      throw err;
+    })
+    .finally(() => {
+      if (usersLoading === request) usersLoading = null;
+    });
+  usersLoading = request;
+  return usersLoading;
+}
+
 /* -------------------------------------------------------------------- boot */
 
 (async function boot() {
@@ -46,6 +79,7 @@ let refresh = () => {};
   bindTourHost({
     setTab: (id) => {
       if (tab === id) return false;
+      if (id === 'users') usersLoadFailed = false;
       tab = id;
       return true;
     },
@@ -142,21 +176,6 @@ const TABS = [
   ['settings', 'Settings'],
 ];
 
-/** Host-managed accounts — loaded with the console, kept outside redraw drafts. */
-let usersCache = [];
-let usersLoaded = false;
-const userDraft = { username: '', displayName: '', password: '' };
-/** Optional password reset field keyed by user id. */
-const passwordResets = new Map();
-
-async function loadUsers({ force = false } = {}) {
-  if (usersLoaded && !force) return usersCache;
-  const data = await api('/host/users');
-  usersCache = data.users || [];
-  usersLoaded = true;
-  return usersCache;
-}
-
 function console_() {
   const present = state.players.filter((p) => p.present).length;
   const waiting = pendingSongs(state).length;
@@ -172,8 +191,11 @@ function console_() {
     songs: 'host-songs',
   }[tab];
 
-  if (tab === 'users' && !usersLoaded) {
-    loadUsers().then(() => draw()).catch((err) => toast(err.message, 'error'));
+  if (tab === 'users' && !usersLoaded && !usersLoading && !usersLoadFailed) {
+    loadUsers().then(() => draw()).catch((err) => {
+      toast(err.message, 'error');
+      draw();
+    });
   }
 
   return el('div', { class: 'stack stack--lg' },
@@ -201,7 +223,11 @@ function console_() {
           'aria-controls': `panel-${id}`,
           tabIndex: tab === id ? 0 : -1,
           onKeydown: onTabKey,
-          onClick: () => { tab = id; draw(); },
+          onClick: () => {
+            if (id === 'users' && tab !== 'users') usersLoadFailed = false;
+            tab = id;
+            draw();
+          },
         }, label,
           counts[id] != null ? el('span', { class: 'count' }, counts[id]) : null,
           id === 'songs' && waiting
@@ -238,6 +264,7 @@ function onTabKey(e) {
   else return;
 
   e.preventDefault();
+  if (next === 'users' && tab !== 'users') usersLoadFailed = false;
   tab = next;
   draw();
   // The whole console is rebuilt on draw, so the focused button is gone by
@@ -979,14 +1006,30 @@ function usersTab() {
       el('div', { class: 'card__head' },
         el('h2', {}, 'Accounts'),
         el('span', { class: 'hint' },
-          usersLoaded ? pluralize(usersCache.length, 'user') : 'Loading…'),
+          usersLoaded ? pluralize(usersCache.length, 'user')
+            : usersLoadFailed ? 'Couldn’t load'
+              : 'Loading…'),
       ),
-      !usersLoaded
-        ? el('div', { class: 'empty' }, 'Loading accounts…')
-        : usersCache.length
-          ? el('div', { class: 'stack', style: { gap: '12px' } }, usersCache.map(userCard))
-          : el('div', { class: 'empty' },
-              'No accounts yet. Create one above — guests can still join with just a name.'),
+      usersLoadFailed
+        ? el('div', { class: 'stack' },
+            el('div', { class: 'empty' }, 'Couldn’t load accounts.'),
+            el('button', {
+              class: 'btn btn--ghost btn--sm',
+              onClick: () => {
+                usersLoadFailed = false;
+                loadUsers({ force: true }).then(() => draw()).catch((err) => {
+                  toast(err.message, 'error');
+                  draw();
+                });
+              },
+            }, 'Try again'),
+          )
+        : !usersLoaded
+          ? el('div', { class: 'empty' }, 'Loading accounts…')
+          : usersCache.length
+            ? el('div', { class: 'stack', style: { gap: '12px' } }, usersCache.map(userCard))
+            : el('div', { class: 'empty' },
+                'No accounts yet. Create one above — guests can still join with just a name.'),
     ),
   );
 }
@@ -1013,6 +1056,7 @@ function userCard(user) {
     ),
     el('div', { class: 'row row--wrap', style: { gap: '8px', marginTop: '8px' } },
       el('input', {
+        id: `user-reset-${user.id}`,
         type: 'password',
         class: 'grow',
         placeholder: 'New password',
@@ -1151,9 +1195,9 @@ function settingsTab() {
       el('section', { class: 'card stack' },
         el('div', { class: 'card__head' }, el('h2', {}, 'Backup')),
         el('p', { class: 'section-note' },
-          'Download the whole night (roster, songs, and player session tokens) so you can restore if Redis hiccups or someone clears too soon.'),
+          'Download the whole night (roster, songs, player session tokens, and registered accounts) so you can restore if Redis hiccups or someone clears too soon.'),
         el('p', { class: 'section-note' },
-          'Treat the file like a password: anyone with it can restore those phones onto a night. Do not post it in chat or email.'),
+          'Treat the file like a password file: it includes account password hashes and salts plus session tokens. Anyone with it can restore those phones onto a night or attack the hashes offline. Do not post it in chat or email.'),
         el('div', { class: 'row row--wrap' },
           el('button', {
             class: 'btn btn--primary',

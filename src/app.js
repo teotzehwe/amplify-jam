@@ -15,7 +15,12 @@ import { openStore, newId, DEFAULT_INSTRUMENTS, migrate } from './store.js';
 import { commitRound, instrumentFor, mayPlay, signupsFor, STANCES, LEVELS } from './signups.js';
 import { buildPdf } from './pdf.js';
 import { buildSessionReport } from './report.js';
-import { hashPassword, publicUser, verifyPassword } from './passwords.js';
+import {
+  DUMMY_CREDENTIAL,
+  hashPassword,
+  publicUser,
+  verifyPasswordAsync,
+} from './passwords.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PUBLIC = join(ROOT, 'public');
@@ -236,17 +241,69 @@ function parseNewPassword(value) {
   return password;
 }
 
+/** In-memory login throttle: per client IP and per username. */
+const loginAttempts = new Map();
+const LOGIN_FAIL_LIMIT = 5;
+const LOGIN_BACKOFF_BASE_MS = 30_000;
+const LOGIN_BACKOFF_CAP_MS = 15 * 60 * 1000;
+
+function clientIp(ctx) {
+  const forwarded = String(ctx.ip || '').split(',')[0].trim();
+  return forwarded || 'unknown';
+}
+
+function loginKeys(ip, username) {
+  return [`ip:${ip}`, `user:${String(username).toLowerCase()}`];
+}
+
+function assertLoginAllowed(ip, username) {
+  const now = Date.now();
+  for (const key of loginKeys(ip, username)) {
+    const row = loginAttempts.get(key);
+    if (row?.until > now) {
+      throw new HttpError(429, 'Too many sign-in attempts — try again in a moment');
+    }
+  }
+}
+
+function recordLoginFailure(ip, username) {
+  const now = Date.now();
+  for (const key of loginKeys(ip, username)) {
+    const row = loginAttempts.get(key) || { count: 0, until: 0 };
+    row.count += 1;
+    if (row.count >= LOGIN_FAIL_LIMIT) {
+      const excess = Math.min(row.count - LOGIN_FAIL_LIMIT, 5);
+      row.until = now + Math.min(LOGIN_BACKOFF_CAP_MS, LOGIN_BACKOFF_BASE_MS * (2 ** excess));
+    }
+    loginAttempts.set(key, row);
+  }
+}
+
+function clearLoginFailures(ip, username) {
+  for (const key of loginKeys(ip, username)) loginAttempts.delete(key);
+}
+
 /**
  * Sign in with a host-created account. Resumes tonight's player seat for that
  * user (or opens a fresh one) and rotates the session token.
  */
-route('POST', /^\/api\/auth\/login$/, (ctx) => {
+route('POST', /^\/api\/auth\/login$/, async (ctx) => {
   const username = parseUsername(ctx.body.username);
   const password = String(ctx.body.password ?? '');
+  const ip = clientIp(ctx);
+  assertLoginAllowed(ip, username);
+
   const user = store.userByUsername(username);
-  if (!user || user.disabled || !verifyPassword(password, user.passwordSalt, user.passwordHash)) {
+  // Always pay scrypt cost (dummy salt/hash when unknown) so timing cannot
+  // enumerate which usernames exist — including disabled accounts.
+  const salt = user?.passwordSalt || DUMMY_CREDENTIAL.salt;
+  const hash = user?.passwordHash || DUMMY_CREDENTIAL.hash;
+  const passwordOk = await verifyPasswordAsync(password, salt, hash);
+  if (!user || user.disabled || !passwordOk) {
+    recordLoginFailure(ip, username);
     throw new HttpError(401, 'Username or password is wrong');
   }
+  clearLoginFailures(ip, username);
 
   let playerId;
   let token;
@@ -638,11 +695,22 @@ route('POST', /^\/api\/host\/commit$/, (ctx) => {
 
   store.update((state) => {
     commitRound(state.players, current, state.roundIndex);
+    const song = state.songs.find((s) => s.id === current.songId) || null;
+    // Snapshot display fields so reports stay readable after songs/players change.
     state.rounds.push({
       index: state.roundIndex,
       songId: current.songId,
+      songTitle: song?.title ?? null,
+      songArtist: song?.artist ?? null,
       playedAt: Date.now(),
-      picks: current.picks.map(({ instrument, playerId }) => ({ instrument, playerId })),
+      picks: current.picks.map(({ instrument, playerId }) => {
+        const player = state.players.find((p) => p.id === playerId);
+        return {
+          instrument,
+          playerId,
+          playerName: player?.name || null,
+        };
+      }),
     });
     state.roundIndex += 1;
     state.current = null;
@@ -913,6 +981,7 @@ export async function handleRequest(req, res) {
       return send(res, err.status || 400, { error: err.message });
     }
 
+    const forwarded = req.headers['x-forwarded-for'];
     const ctx = {
       params: path.match(match.pattern).slice(1),
       body,
@@ -921,6 +990,9 @@ export async function handleRequest(req, res) {
       // the browser and stores it; API calls must send x-host-token.
       hostToken: req.headers['x-host-token'] || '',
       playerToken: req.headers['x-player-token'] || '',
+      ip: (typeof forwarded === 'string' && forwarded.split(',')[0].trim())
+        || req.socket?.remoteAddress
+        || '',
     };
 
     try {

@@ -193,6 +193,9 @@ test('a full round trip: a song, sign-ups, a hand-picked band, committed turns',
     data.players.find((p) => p.id === guitarist.data.id).stats.plays, 0,
     'signing up is not the same as being called — the host picked one of the two',
   );
+  const [round] = data.rounds;
+  assert.equal(round.songTitle, 'Test Song');
+  assert.equal(round.picks[0].playerName, 'Drummer');
 });
 
 test('the API refuses to seat anybody who did not sign up', async () => {
@@ -762,4 +765,26 @@ test('clearing the night keeps registered users', async () => {
   const listed = await call('/host/users', { host: true });
   assert.ok(listed.data.users.some((u) => u.username === 'keepme'));
   assert.equal((await call('/state')).data.hasUsers, true);
+});
+
+test('login throttles repeated failures for the same username', async () => {
+  await call('/host/users', {
+    method: 'POST',
+    body: { username: 'slowpoke', displayName: 'Slow', password: 'secret1' },
+    host: true,
+  });
+
+  let last = null;
+  for (let i = 0; i < 5; i++) {
+    last = await call('/auth/login', {
+      method: 'POST',
+      body: { username: 'slowpoke', password: 'wrong-pass' },
+    });
+    assert.equal(last.status, 401);
+  }
+  last = await call('/auth/login', {
+    method: 'POST',
+    body: { username: 'slowpoke', password: 'wrong-pass' },
+  });
+  assert.equal(last.status, 429);
 });

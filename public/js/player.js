@@ -87,6 +87,7 @@ function draw() {
 function playerSteps() {
   return playerTourSteps({
     you: me,
+    entryMode: () => entryMode,
     suggestionsOn: () => Boolean(state?.jam?.allowSuggestions),
   });
 }
