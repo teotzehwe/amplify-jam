@@ -215,11 +215,11 @@ test('a failed Supabase delete does not resurrect the account on reload', async 
   const victim = listed.data.users.find((u) => u.username === 'alex');
   assert.ok(victim);
 
-  // replaceAll does POST then DELETE — fail enough writes that sync cannot finish.
+  // replaceAll deletes absent ids then upserts — fail writes so remote stays stale.
   supabase.failNextWrites(6);
   const deleted = await call(`/host/users/${victim.id}`, { method: 'DELETE', host: true });
-  // Blob delete may still return 503 after CAS if remote sync throws.
-  assert.ok(deleted.status === 200 || deleted.status === 503, JSON.stringify(deleted.data));
+  // Night commit succeeds even when remote sync fails.
+  assert.equal(deleted.status, 200, JSON.stringify(deleted.data));
 
   // Remote still has the row (writes failed), but tombstone must keep them out.
   assert.ok(supabase.listJam('amplify-test').some((r) => r.id === victim.id));

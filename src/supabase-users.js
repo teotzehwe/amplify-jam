@@ -83,6 +83,8 @@ export class SupabaseUsers {
       method,
       headers: this.headers(prefer ? { prefer } : {}),
       body: body != null ? JSON.stringify(body) : undefined,
+      // Hang forever would stall every API request that loads accounts.
+      signal: AbortSignal.timeout(5000),
     });
     const text = await res.text();
     let data = null;
@@ -120,19 +122,12 @@ export class SupabaseUsers {
 
   /**
    * Make the remote table match `users` exactly for this jam.
-   * Upserts every row, then deletes ids that are no longer present.
+   * Delete absent ids first so a tombstoned username cannot collide with a
+   * later upsert on the unique (jam_id, username) constraint.
    */
   async replaceAll(users) {
     const list = Array.isArray(users) ? users : [];
     const rows = list.map((u) => rowFromUser(u, this.jamId));
-
-    if (rows.length > 0) {
-      await this.request(TABLE, {
-        method: 'POST',
-        body: rows,
-        prefer: 'resolution=merge-duplicates,return=minimal',
-      });
-    }
 
     if (rows.length === 0) {
       await this.request(
@@ -149,6 +144,12 @@ export class SupabaseUsers {
       `${TABLE}?jam_id=eq.${encodeURIComponent(this.jamId)}&id=not.in.(${inList})`,
       { method: 'DELETE', prefer: 'return=minimal' },
     );
+
+    await this.request(TABLE, {
+      method: 'POST',
+      body: rows,
+      prefer: 'resolution=merge-duplicates,return=minimal',
+    });
   }
 }
 
@@ -219,9 +220,10 @@ export class UsersSyncedBackend {
     const merged = mergeUsers(localUsers, remoteUsers, deletedIds);
     state.users = merged;
 
-    // Heal a prior save where Redis CAS landed but the Supabase push failed.
-    // Prefer the merged (tombstone-filtered) list so deletes still propagate.
-    if (usersSignature(merged) !== usersSignature(remoteUsers.filter((u) => !deletedIds.includes(u.id)))) {
+    // Heal when remote still has rows the merge dropped (tombstones) or lags
+    // behind local CAS wins. Compare to the raw remote list so deletes are not
+    // skipped after filtering.
+    if (usersSignature(merged) !== usersSignature(remoteUsers)) {
       try {
         await this.remote.replaceAll(merged);
         // Remote matches the tombstone-filtered list — clear spent tombstones.
@@ -236,8 +238,8 @@ export class UsersSyncedBackend {
   async save(state, expectedVersion) {
     const ok = await this.inner.save(state, expectedVersion);
     if (!ok) return false;
-    // Retry a couple of times — night is already committed; healing on the
-    // next load covers a hard failure, but succeeding here avoids a window.
+    // Night is already committed. Retry remote sync, but do not fail the
+    // request if Supabase is down — load() heals on the next request.
     let lastErr;
     for (let i = 0; i < 3; i++) {
       try {
@@ -248,7 +250,8 @@ export class UsersSyncedBackend {
         await new Promise((r) => setTimeout(r, 20 * (i + 1)));
       }
     }
-    throw lastErr;
+    console.error('Supabase accounts sync failed after retries:', lastErr?.message);
+    return true;
   }
 }
 
