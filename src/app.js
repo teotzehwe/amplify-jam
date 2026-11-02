@@ -244,6 +244,9 @@ function parseNewPassword(value) {
 /**
  * In-memory login throttle: per client IP, and per IP+username pair.
  * Username alone is never a key — that would let strangers lock out accounts.
+ *
+ * Row shape: { count, until, lockouts, touched }
+ * `lockouts` survives a finished backoff so the next lockout doubles.
  */
 const loginAttempts = new Map();
 const LOGIN_FAIL_LIMIT = 5;
@@ -262,15 +265,22 @@ function loginKeys(ip, username) {
   return [`ip:${ip}`, `ipuser:${ip}:${user}`];
 }
 
-function loginBackoffMs(count) {
-  const excess = Math.min(Math.max(0, count - LOGIN_FAIL_LIMIT), 5);
-  return Math.min(LOGIN_BACKOFF_CAP_MS, LOGIN_BACKOFF_BASE_MS * (2 ** excess));
+/** `lockouts` is how many lockouts have already completed (0 = first lock). */
+function loginBackoffMs(lockouts) {
+  const n = Math.min(Math.max(0, lockouts || 0), 5);
+  return Math.min(LOGIN_BACKOFF_CAP_MS, LOGIN_BACKOFF_BASE_MS * (2 ** n));
 }
 
 function pruneLoginAttempts(now = Date.now()) {
   for (const [key, row] of loginAttempts) {
     if (row.until && row.until <= now) {
-      loginAttempts.delete(key);
+      // Backoff over — keep strike history so the next lockout escalates.
+      loginAttempts.set(key, {
+        count: 0,
+        until: 0,
+        lockouts: row.lockouts || 0,
+        touched: now,
+      });
       continue;
     }
     if (!row.until && now - (row.touched || 0) > LOGIN_IDLE_RESET_MS) {
@@ -280,29 +290,39 @@ function pruneLoginAttempts(now = Date.now()) {
 }
 
 /**
- * Sync gate before the awaited scrypt verify. Reserves a failure slot so
- * parallel guesses cannot all slip under the limit while scrypt runs.
+ * Sync gate before the awaited scrypt verify. Checks every key first, then
+ * reserves on all of them, so a locked pair cannot burn a shared IP slot.
  */
 function beginLoginAttempt(ip, username) {
   const now = Date.now();
   pruneLoginAttempts(now);
-  for (const key of loginKeys(ip, username)) {
-    let row = loginAttempts.get(key);
+  const keys = loginKeys(ip, username);
+
+  for (const key of keys) {
+    const row = loginAttempts.get(key);
     if (row?.until > now) {
       throw new HttpError(429, 'Too many sign-in attempts — try again in a moment');
     }
-    if (!row || (row.until && row.until <= now)) {
-      row = { count: 0, until: 0, touched: now };
-    }
-    if (row.count >= LOGIN_FAIL_LIMIT) {
-      row.until = now + loginBackoffMs(row.count);
-      row.touched = now;
-      loginAttempts.set(key, row);
+    if ((row?.count || 0) >= LOGIN_FAIL_LIMIT) {
+      const next = {
+        count: row.count,
+        until: now + loginBackoffMs(row.lockouts || 0),
+        lockouts: (row.lockouts || 0) + 1,
+        touched: now,
+      };
+      loginAttempts.set(key, next);
       throw new HttpError(429, 'Too many sign-in attempts — try again in a moment');
     }
-    row.count += 1;
-    row.touched = now;
-    loginAttempts.set(key, row);
+  }
+
+  for (const key of keys) {
+    const prev = loginAttempts.get(key);
+    loginAttempts.set(key, {
+      count: (prev?.count || 0) + 1,
+      until: 0,
+      lockouts: prev?.lockouts || 0,
+      touched: now,
+    });
   }
 }
 
@@ -313,8 +333,9 @@ function finishLoginFailure(ip, username) {
     const row = loginAttempts.get(key);
     if (!row) continue;
     row.touched = now;
-    if (row.count >= LOGIN_FAIL_LIMIT) {
-      row.until = now + loginBackoffMs(row.count);
+    if (row.count >= LOGIN_FAIL_LIMIT && !(row.until > now)) {
+      row.until = now + loginBackoffMs(row.lockouts || 0);
+      row.lockouts = (row.lockouts || 0) + 1;
     }
     loginAttempts.set(key, row);
   }
@@ -1023,10 +1044,11 @@ export async function handleRequest(req, res) {
     }
 
     const forwarded = req.headers['x-forwarded-for'];
-    // Trust X-Forwarded-For only on Vercel, where the platform sets it.
-    // On a bare `node server.js` the client can spoof the header and dodge
-    // the per-IP login throttle.
-    const forwardedIp = process.env.VERCEL && typeof forwarded === 'string'
+    // Trust X-Forwarded-For only when a platform/proxy sets it (Vercel), or
+    // when tests opt in via AMPLIFY_TRUST_PROXY. On a bare `node server.js`
+    // the client can spoof the header and dodge the per-IP login throttle.
+    const trustProxy = Boolean(process.env.VERCEL) || process.env.AMPLIFY_TRUST_PROXY === '1';
+    const forwardedIp = trustProxy && typeof forwarded === 'string'
       ? forwarded.split(',')[0].trim()
       : '';
     const ctx = {
