@@ -106,10 +106,11 @@ test('health reports Supabase account sync without secrets', async () => {
 });
 
 test('creating a user dual-writes into Supabase', async () => {
-  // First admin via setup (no host token needed when no admins).
+  // HOST_KEY is set in this suite, so setup requires the host token.
   const setup = await call('/host/setup', {
     method: 'POST',
     body: { username: 'boss', displayName: 'Boss', password: 'password1' },
+    host: true,
   });
   assert.equal(setup.status, 200, JSON.stringify(setup.data));
 
