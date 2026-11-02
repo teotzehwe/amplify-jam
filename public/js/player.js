@@ -18,6 +18,10 @@ const draft = {
   stances: {},
 };
 
+/** Guest join vs password sign-in on the entry screen. */
+let entryMode = 'join'; // 'join' | 'signin'
+const loginDraft = { username: '', password: '' };
+
 /**
  * Held outside the render so a live update from anyone else in the room
  * cannot wipe a half-typed suggestion.
@@ -83,6 +87,7 @@ function draw() {
 function playerSteps() {
   return playerTourSteps({
     you: me,
+    entryMode: () => entryMode,
     suggestionsOn: () => Boolean(state?.jam?.allowSuggestions),
   });
 }
@@ -388,8 +393,9 @@ function suggestSong(you) {
 
 function signupView() {
   const redraw = () => draw();
+  const showSignIn = Boolean(state.hasUsers);
 
-  const submit = guard(busy(async () => {
+  const submitJoin = guard(busy(async () => {
     if (!draft.name.trim()) {
       shake(document.getElementById('name')?.closest('.field') || document.getElementById('name'));
       return toast('Add your name first', 'error');
@@ -413,34 +419,111 @@ function signupView() {
     refresh(true);
   }));
 
+  const submitLogin = guard(busy(async () => {
+    if (!loginDraft.username.trim()) {
+      shake(document.getElementById('login-username')?.closest('.field') || $('#login-username'));
+      return toast('Enter your username', 'error');
+    }
+    if (!loginDraft.password) {
+      shake(document.getElementById('login-password')?.closest('.field') || $('#login-password'));
+      return toast('Enter your password', 'error');
+    }
+    const res = await api('/auth/login', {
+      method: 'POST',
+      as: 'player',
+      body: {
+        username: loginDraft.username.trim(),
+        password: loginDraft.password,
+      },
+    });
+    tokens.player = res.token;
+    tokens.playerId = res.id;
+    loginDraft.password = '';
+    toast(`Welcome back, ${res.username}`);
+    refresh(true);
+  }, 'player-login'));
+
+  const mode = showSignIn ? entryMode : 'join';
+
   return el('div', { class: 'stack stack--lg' },
     masthead(state.jam.name, 'Hey! Jump in and tell us who you are.',
       tourButton(PLAYER_TOUR, playerSteps),
     ),
 
-    el('section', { class: 'folio', dataset: { tour: 'player-join' } },
-      el('div', { class: 'field' },
-        el('label', { for: 'name' }, 'Your name'),
-        el('input', {
-          id: 'name',
-          type: 'text',
-          maxLength: 60,
-          autocomplete: 'name',
-          placeholder: 'What should we call you?',
-          value: draft.name,
-          onInput: (e) => { draft.name = e.target.value; },
-        }),
-      ),
+    showSignIn
+      ? el('div', { class: 'row row--wrap', role: 'tablist', 'aria-label': 'How to join' },
+          el('button', {
+            type: 'button',
+            role: 'tab',
+            class: `btn btn--sm${mode === 'join' ? ' btn--primary' : ' btn--ghost'}`,
+            'aria-selected': String(mode === 'join'),
+            onClick: () => { entryMode = 'join'; draw(); },
+          }, 'Join as guest'),
+          el('button', {
+            type: 'button',
+            role: 'tab',
+            class: `btn btn--sm${mode === 'signin' ? ' btn--primary' : ' btn--ghost'}`,
+            'aria-selected': String(mode === 'signin'),
+            onClick: () => { entryMode = 'signin'; draw(); },
+          }, 'Sign in'),
+        )
+      : null,
 
-      el('div', { class: 'folio__rule' }, el('span', { class: 'kicker' }, 'What do you play?')),
+    mode === 'signin'
+      ? el('section', { class: 'folio', dataset: { tour: 'player-signin' } },
+          el('p', { class: 'section-note' },
+            'Use the username and password the host set up for you.'),
+          el('div', { class: 'field' },
+            el('label', { for: 'login-username' }, 'Username'),
+            el('input', {
+              id: 'login-username',
+              type: 'text',
+              autocomplete: 'username',
+              spellcheck: 'false',
+              maxLength: 32,
+              value: loginDraft.username,
+              onInput: (e) => { loginDraft.username = e.target.value; },
+            }),
+          ),
+          el('div', { class: 'field' },
+            el('label', { for: 'login-password' }, 'Password'),
+            el('input', {
+              id: 'login-password',
+              type: 'password',
+              autocomplete: 'current-password',
+              maxLength: 72,
+              value: loginDraft.password,
+              onInput: (e) => { loginDraft.password = e.target.value; },
+              onKeydown: (e) => e.key === 'Enter' && submitLogin(e),
+            }),
+          ),
+          el('div', { class: 'sticky-bar' },
+            el('button', { class: 'btn btn--primary btn--lg btn--block', onClick: submitLogin }, 'Sign in'),
+          ),
+        )
+      : el('section', { class: 'folio', dataset: { tour: 'player-join' } },
+          el('div', { class: 'field' },
+            el('label', { for: 'name' }, 'Your name'),
+            el('input', {
+              id: 'name',
+              type: 'text',
+              maxLength: 60,
+              autocomplete: 'name',
+              placeholder: 'What should we call you?',
+              value: draft.name,
+              onInput: (e) => { draft.name = e.target.value; },
+            }),
+          ),
 
-      el('p', { class: 'section-note' }, 'Tap everything you might grab tonight — no wrong answers.'),
-      instrumentPicker(draft.instruments, redraw),
-    ),
+          el('div', { class: 'folio__rule' }, el('span', { class: 'kicker' }, 'What do you play?')),
 
-    el('div', { class: 'sticky-bar' },
-      el('button', { class: 'btn btn--primary btn--lg btn--block', onClick: submit }, "I'm in!"),
-    ),
+          el('p', { class: 'section-note' }, 'Tap everything you might grab tonight — no wrong answers.'),
+          instrumentPicker(draft.instruments, redraw),
+
+          el('div', { class: 'sticky-bar' },
+            el('button', { class: 'btn btn--primary btn--lg btn--block', onClick: submitJoin }, "I'm in!"),
+          ),
+        ),
   );
 }
 

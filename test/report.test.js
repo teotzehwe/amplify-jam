@@ -110,6 +110,49 @@ test('buildSessionReport summarises the night without tokens', () => {
   assert.match(declined, /Too slow for tonight/);
 });
 
+test('buildSessionReport uses commit snapshots and labels free jams', () => {
+  const state = baseState();
+  state.songs = [];
+  state.players = [];
+  state.rounds = [
+    {
+      index: 0,
+      songId: null,
+      songTitle: null,
+      songArtist: null,
+      playedAt: Date.UTC(2026, 9, 2, 21, 0),
+      picks: [{ playerId: 'gone', instrument: 'Keys', playerName: 'Cara' }],
+    },
+    {
+      index: 1,
+      songId: 'deleted',
+      songTitle: 'Old Hit',
+      songArtist: 'Past Band',
+      playedAt: Date.UTC(2026, 9, 2, 21, 30),
+      picks: [{ playerId: 'gone2', instrument: 'Guitar', playerName: 'Dee' }],
+    },
+  ];
+
+  const played = buildSessionReport(state).sections.find((s) => s.heading === 'Songs played').lines;
+  assert.match(played[0], /Free jam/);
+  assert.match(played[0], /Cara \(Keys\)/);
+  assert.match(played[1], /Old Hit — Past Band/);
+  assert.match(played[1], /Dee \(Guitar\)/);
+});
+
+test('buildPdf wraps overlong words instead of overflowing', () => {
+  const long = `Title ${'Supercalifragilisticexpialidocious'.repeat(4)}`;
+  const pdf = buildPdf({
+    title: 'Wrap check',
+    subtitle: 'test',
+    sections: [{ heading: 'Songs', lines: [long] }],
+  });
+  const body = pdf.toString('utf8');
+  assert.ok(body.includes('Supercalifragilisticexpialidocious'));
+  // Chunked across lines — the unbroken mega-token should not appear as one Tj.
+  assert.equal((body.match(/SupercalifragilisticexpialidociousSupercalifragilisticexpialidociousSupercalifragilisticexpialidociousSupercalifragilisticexpialidocious/g) || []).length, 0);
+});
+
 test('buildPdf emits a multi-page PDF that starts with %PDF', () => {
   const report = buildSessionReport(baseState());
   // Pad enough lines that pagination kicks in.

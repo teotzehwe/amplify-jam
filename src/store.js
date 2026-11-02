@@ -45,6 +45,9 @@ function defaultState(hostKey) {
       ],
     },
     hostToken: hostKey || newId(),
+    // Registered accounts (username + password) the host manages. Separate from
+    // tonight's roster: a user signs in to claim or resume a player seat.
+    users: [],
     players: [],
     songs: [],
     rounds: [],
@@ -74,9 +77,21 @@ export function migrate(state, hostKey) {
     present: true,
     removed: false,
     notes: '',
+    userId: null,
     ...p,
     stats: { plays: 0, lastRound: null, streak: 0, byInstrument: {}, ...(p.stats || {}) },
   }));
+
+  out.users = (state.users || []).map((u) => ({
+    id: u.id,
+    username: String(u.username || '').trim(),
+    displayName: String(u.displayName || u.username || '').trim(),
+    passwordHash: u.passwordHash || '',
+    passwordSalt: u.passwordSalt || '',
+    instruments: Array.isArray(u.instruments) ? u.instruments : [],
+    disabled: Boolean(u.disabled),
+    createdAt: u.createdAt || Date.now(),
+  })).filter((u) => u.id && u.username && u.passwordHash && u.passwordSalt);
 
   // A song from before approval existed was already visible to the whole room,
   // so it is approved. Hiding songs people had signed up for would be a worse
@@ -331,11 +346,14 @@ export class Store {
    */
   publicState() {
     // lastHostExportAt is a server-side gate for clearing the night — not for phones.
-    const { hostToken, lastHostExportAt, ...rest } = this.state;
+    // users stay server-side except via /api/host/users (hashes never leave).
+    const { hostToken, lastHostExportAt, users, ...rest } = this.state;
     return {
       ...rest,
       version: this.version,
       players: rest.players.filter((p) => !p.removed).map(({ token, ...p }) => p),
+      // Phones only need to know accounts exist so the sign-in form can show.
+      hasUsers: Array.isArray(users) && users.some((u) => !u.disabled),
     };
   }
 
@@ -346,6 +364,16 @@ export class Store {
   playerByToken(token) {
     if (!token) return null;
     return this.state.players.find((p) => p.token === token && !p.removed) || null;
+  }
+
+  userByUsername(username) {
+    const key = String(username || '').trim().toLowerCase();
+    if (!key) return null;
+    return (this.state.users || []).find((u) => u.username.toLowerCase() === key) || null;
+  }
+
+  userById(id) {
+    return (this.state.users || []).find((u) => u.id === id) || null;
   }
 }
 

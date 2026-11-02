@@ -24,20 +24,36 @@ export function pdfText(value) {
     .replace(/\)/g, '\\)');
 }
 
+/** Break a single overlong token so it cannot run past the page margin. */
+function chunkWord(word, maxChars) {
+  if (word.length <= maxChars) return [word];
+  const parts = [];
+  for (let i = 0; i < word.length; i += maxChars) {
+    parts.push(word.slice(i, i + maxChars));
+  }
+  return parts;
+}
+
 function wrap(text, maxChars) {
   const words = String(text).split(/\s+/).filter(Boolean);
   if (!words.length) return [''];
   const lines = [];
-  let cur = words[0];
-  for (let i = 1; i < words.length; i++) {
-    const next = `${cur} ${words[i]}`;
-    if (next.length <= maxChars) cur = next;
-    else {
-      lines.push(cur);
-      cur = words[i];
+  let cur = '';
+  for (const word of words) {
+    for (const piece of chunkWord(word, maxChars)) {
+      if (!cur) {
+        cur = piece;
+        continue;
+      }
+      const next = `${cur} ${piece}`;
+      if (next.length <= maxChars) cur = next;
+      else {
+        lines.push(cur);
+        cur = piece;
+      }
     }
   }
-  lines.push(cur);
+  if (cur) lines.push(cur);
   return lines;
 }
 

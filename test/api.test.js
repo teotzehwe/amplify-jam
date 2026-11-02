@@ -26,7 +26,18 @@ before(async () => {
   base = `http://127.0.0.1:${port}`;
 
   server = spawn(process.execPath, [join(ROOT, 'server.js')], {
-    env: { ...process.env, PORT: String(port), DATA_DIR: dataDir },
+    // Do not inherit process.env — a shell/CI KV URL or VERCEL flag would
+    // point these tests at remote storage or trip hosted-mode 503s.
+    env: {
+      PATH: process.env.PATH,
+      TMPDIR: process.env.TMPDIR || process.env.TMP || '',
+      HOME: process.env.HOME || '',
+      PORT: String(port),
+      DATA_DIR: dataDir,
+      // Let throttle tests set distinct client IPs via X-Forwarded-For without
+      // enabling full Vercel mode (which would require a KV backend).
+      AMPLIFY_TRUST_PROXY: '1',
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
@@ -51,13 +62,16 @@ after(async () => {
 
 /* ------------------------------------------------------------------ helpers */
 
-async function call(path, { method = 'GET', body, host = false, player } = {}) {
+async function call(path, {
+  method = 'GET', body, host = false, player, forwardedFor,
+} = {}) {
   const res = await fetch(base + '/api' + path, {
     method,
     headers: {
       ...(body ? { 'content-type': 'application/json' } : {}),
       ...(host ? { 'x-host-token': hostKey } : {}),
       ...(player ? { 'x-player-token': player } : {}),
+      ...(forwardedFor ? { 'x-forwarded-for': forwardedFor } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -193,6 +207,9 @@ test('a full round trip: a song, sign-ups, a hand-picked band, committed turns',
     data.players.find((p) => p.id === guitarist.data.id).stats.plays, 0,
     'signing up is not the same as being called — the host picked one of the two',
   );
+  const [round] = data.rounds;
+  assert.equal(round.songTitle, 'Test Song');
+  assert.equal(round.picks[0].playerName, 'Drummer');
 });
 
 test('the API refuses to seat anybody who did not sign up', async () => {
@@ -698,4 +715,100 @@ test('import refuses backups with incomplete players or unknown song status', as
   const { data } = await call('/state');
   assert.notEqual(data.jam.name, 'X');
   assert.ok(!data.songs.some((s) => s.status === 'mystery'));
+});
+
+test('the host can create users and they can sign in with a password', async () => {
+  const before = await call('/state');
+  assert.equal(before.data.hasUsers, false);
+
+  assert.equal((await call('/host/users', { method: 'POST', body: {
+    username: 'alex', displayName: 'Alex', password: 'secret1',
+  } })).status, 403);
+
+  const created = await call('/host/users', {
+    method: 'POST',
+    body: { username: 'alex', displayName: 'Alex', password: 'secret1' },
+    host: true,
+  });
+  assert.equal(created.status, 200);
+  assert.equal(created.data.user.username, 'alex');
+  assert.equal(created.data.user.passwordHash, undefined);
+
+  const listed = await call('/host/users', { host: true });
+  assert.ok(listed.data.users.some((u) => u.username === 'alex'));
+
+  const pub = await call('/state');
+  assert.equal(pub.data.hasUsers, true);
+  assert.equal(pub.data.users, undefined);
+
+  assert.equal((await call('/auth/login', {
+    method: 'POST', body: { username: 'alex', password: 'nope' },
+  })).status, 401);
+
+  const login = await call('/auth/login', {
+    method: 'POST', body: { username: 'Alex', password: 'secret1' },
+  });
+  assert.equal(login.status, 200);
+  assert.ok(login.data.token);
+  assert.equal(login.data.username, 'alex');
+
+  const me = await call('/state', { player: login.data.token });
+  assert.equal(me.data.youId, login.data.id);
+  const row = me.data.players.find((p) => p.id === login.data.id);
+  assert.equal(row.name, 'Alex');
+  assert.equal(row.userId, created.data.user.id);
+  assert.equal(row.token, undefined);
+
+  // Second login resumes the same seat with a fresh token.
+  const again = await call('/auth/login', {
+    method: 'POST', body: { username: 'alex', password: 'secret1' },
+  });
+  assert.equal(again.data.id, login.data.id);
+  assert.notEqual(again.data.token, login.data.token);
+  assert.equal((await call('/state', { player: login.data.token })).data.youId, null);
+  assert.equal((await call('/state', { player: again.data.token })).data.youId, login.data.id);
+});
+
+test('clearing the night keeps registered users', async () => {
+  await call('/host/users', {
+    method: 'POST',
+    body: { username: 'keepme', displayName: 'Keep', password: 'secret1' },
+    host: true,
+  });
+  await clearNight();
+  const listed = await call('/host/users', { host: true });
+  assert.ok(listed.data.users.some((u) => u.username === 'keepme'));
+  assert.equal((await call('/state')).data.hasUsers, true);
+});
+
+test('login throttles repeated failures without locking the username across IPs', async () => {
+  await call('/host/users', {
+    method: 'POST',
+    body: { username: 'slowpoke', displayName: 'Slow', password: 'secret1' },
+    host: true,
+  });
+
+  let last = null;
+  for (let i = 0; i < 5; i++) {
+    last = await call('/auth/login', {
+      method: 'POST',
+      body: { username: 'slowpoke', password: 'wrong-pass' },
+      forwardedFor: '203.0.113.10',
+    });
+    assert.equal(last.status, 401);
+  }
+  last = await call('/auth/login', {
+    method: 'POST',
+    body: { username: 'slowpoke', password: 'wrong-pass' },
+    forwardedFor: '203.0.113.10',
+  });
+  assert.equal(last.status, 429);
+
+  // Same username from a different client IP must not inherit the lockout.
+  const otherIp = await call('/auth/login', {
+    method: 'POST',
+    body: { username: 'slowpoke', password: 'wrong-pass' },
+    forwardedFor: '203.0.113.20',
+  });
+  assert.equal(otherIp.status, 401);
 });

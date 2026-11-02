@@ -15,6 +15,12 @@ import { openStore, newId, DEFAULT_INSTRUMENTS, migrate } from './store.js';
 import { commitRound, instrumentFor, mayPlay, signupsFor, STANCES, LEVELS } from './signups.js';
 import { buildPdf } from './pdf.js';
 import { buildSessionReport } from './report.js';
+import {
+  DUMMY_CREDENTIAL,
+  hashPassword,
+  publicUser,
+  verifyPasswordAsync,
+} from './passwords.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PUBLIC = join(ROOT, 'public');
@@ -203,6 +209,7 @@ route('POST', /^\/api\/join$/, (ctx) => {
     id: newId('u'),
     token: newId(),
     name,
+    userId: null,
     joinedAt: Date.now(),
     present: true,
     removed: false,
@@ -215,6 +222,259 @@ route('POST', /^\/api\/join$/, (ctx) => {
   };
   store.update((state) => state.players.push(player));
   return { id: player.id, token: player.token };
+});
+
+/** Username: 3–32 chars, letters/digits/._- — unique case-insensitively. */
+function parseUsername(value) {
+  const username = str(value, { max: 32, field: 'Username', required: true });
+  if (username.length < 3) throw bad('Username must be at least 3 characters');
+  if (!/^[a-zA-Z0-9._-]+$/.test(username)) {
+    throw bad('Username can only use letters, numbers, dots, underscores and hyphens');
+  }
+  return username;
+}
+
+function parseNewPassword(value) {
+  const password = String(value ?? '');
+  if (password.length < 6) throw bad('Password must be at least 6 characters');
+  if (password.length > 72) throw bad('Password is too long');
+  return password;
+}
+
+/**
+ * In-memory login throttle: per client IP, and per IP+username pair.
+ * Username alone is never a key — that would let strangers lock out accounts.
+ *
+ * Row shape: { count, until, lockouts, touched }
+ * `lockouts` survives a finished backoff so the next lockout doubles.
+ */
+const loginAttempts = new Map();
+const LOGIN_FAIL_LIMIT = 5;
+const LOGIN_BACKOFF_BASE_MS = 30_000;
+const LOGIN_BACKOFF_CAP_MS = 15 * 60 * 1000;
+/** Drop idle failure tallies that never reached a lockout. */
+const LOGIN_IDLE_RESET_MS = 15 * 60 * 1000;
+
+function clientIp(ctx) {
+  const forwarded = String(ctx.ip || '').split(',')[0].trim();
+  return forwarded || 'unknown';
+}
+
+function loginKeys(ip, username) {
+  const user = String(username).toLowerCase();
+  return [`ip:${ip}`, `ipuser:${ip}:${user}`];
+}
+
+/** `lockouts` is how many lockouts have already completed (0 = first lock). */
+function loginBackoffMs(lockouts) {
+  const n = Math.min(Math.max(0, lockouts || 0), 5);
+  return Math.min(LOGIN_BACKOFF_CAP_MS, LOGIN_BACKOFF_BASE_MS * (2 ** n));
+}
+
+function pruneLoginAttempts(now = Date.now()) {
+  for (const [key, row] of loginAttempts) {
+    if (row.until && row.until <= now) {
+      // Backoff over — keep strike history so the next lockout escalates.
+      loginAttempts.set(key, {
+        count: 0,
+        until: 0,
+        lockouts: row.lockouts || 0,
+        touched: now,
+      });
+      continue;
+    }
+    if (!row.until && now - (row.touched || 0) > LOGIN_IDLE_RESET_MS) {
+      loginAttempts.delete(key);
+    }
+  }
+}
+
+/**
+ * Sync gate before the awaited scrypt verify. Checks every key first, then
+ * reserves on all of them, so a locked pair cannot burn a shared IP slot.
+ */
+function beginLoginAttempt(ip, username) {
+  const now = Date.now();
+  pruneLoginAttempts(now);
+  const keys = loginKeys(ip, username);
+
+  for (const key of keys) {
+    const row = loginAttempts.get(key);
+    if (row?.until > now) {
+      throw new HttpError(429, 'Too many sign-in attempts — try again in a moment');
+    }
+    if ((row?.count || 0) >= LOGIN_FAIL_LIMIT) {
+      const next = {
+        count: row.count,
+        until: now + loginBackoffMs(row.lockouts || 0),
+        lockouts: (row.lockouts || 0) + 1,
+        touched: now,
+      };
+      loginAttempts.set(key, next);
+      throw new HttpError(429, 'Too many sign-in attempts — try again in a moment');
+    }
+  }
+
+  for (const key of keys) {
+    const prev = loginAttempts.get(key);
+    loginAttempts.set(key, {
+      count: (prev?.count || 0) + 1,
+      until: 0,
+      lockouts: prev?.lockouts || 0,
+      touched: now,
+    });
+  }
+}
+
+/** After a failed verify — count was already reserved; apply lockout if needed. */
+function finishLoginFailure(ip, username) {
+  const now = Date.now();
+  for (const key of loginKeys(ip, username)) {
+    const row = loginAttempts.get(key);
+    if (!row) continue;
+    row.touched = now;
+    if (row.count >= LOGIN_FAIL_LIMIT && !(row.until > now)) {
+      row.until = now + loginBackoffMs(row.lockouts || 0);
+      row.lockouts = (row.lockouts || 0) + 1;
+    }
+    loginAttempts.set(key, row);
+  }
+}
+
+function clearLoginFailures(ip, username) {
+  for (const key of loginKeys(ip, username)) loginAttempts.delete(key);
+}
+
+/**
+ * Sign in with a host-created account. Resumes tonight's player seat for that
+ * user (or opens a fresh one) and rotates the session token.
+ */
+route('POST', /^\/api\/auth\/login$/, async (ctx) => {
+  const username = parseUsername(ctx.body.username);
+  const password = String(ctx.body.password ?? '');
+  const ip = clientIp(ctx);
+  beginLoginAttempt(ip, username);
+
+  const user = store.userByUsername(username);
+  // Always pay scrypt cost (dummy salt/hash when unknown) so timing cannot
+  // enumerate which usernames exist — including disabled accounts.
+  const salt = user?.passwordSalt || DUMMY_CREDENTIAL.salt;
+  const hash = user?.passwordHash || DUMMY_CREDENTIAL.hash;
+  const passwordOk = await verifyPasswordAsync(password, salt, hash);
+  if (!user || user.disabled || !passwordOk) {
+    finishLoginFailure(ip, username);
+    throw new HttpError(401, 'Username or password is wrong');
+  }
+  clearLoginFailures(ip, username);
+
+  let playerId;
+  let token;
+  store.update((state) => {
+    let player = state.players.find((p) => p.userId === user.id && !p.removed);
+    if (!player) {
+      player = {
+        id: newId('u'),
+        token: newId(),
+        name: user.displayName || user.username,
+        userId: user.id,
+        joinedAt: Date.now(),
+        present: true,
+        removed: false,
+        instruments: Array.isArray(user.instruments) && user.instruments.length
+          ? structuredClone(user.instruments)
+          : [{ name: 'Vocals', level: 'comfortable' }],
+        stances: {},
+        picks: {},
+        limits: {},
+        notes: '',
+        stats: { plays: 0, lastRound: null, streak: 0, byInstrument: {} },
+      };
+      state.players.push(player);
+    } else {
+      player.token = newId();
+      player.present = true;
+      if (!player.name) player.name = user.displayName || user.username;
+    }
+    playerId = player.id;
+    token = player.token;
+  });
+  return { id: playerId, token, userId: user.id, username: user.username };
+});
+
+route('GET', /^\/api\/host\/users$/, (ctx) => {
+  requireHost(ctx);
+  return {
+    users: (store.state.users || []).map(publicUser),
+  };
+});
+
+route('POST', /^\/api\/host\/users$/, (ctx) => {
+  requireHost(ctx);
+  const username = parseUsername(ctx.body.username);
+  if (store.userByUsername(username)) throw bad('That username is already taken');
+  const displayName = str(ctx.body.displayName || username, { max: 60, field: 'Display name', required: true });
+  const password = parseNewPassword(ctx.body.password);
+  const instruments = ctx.body.instruments != null
+    ? parseInstruments(ctx.body.instruments)
+    : [];
+  const { salt, hash } = hashPassword(password);
+  const user = {
+    id: newId('usr'),
+    username,
+    displayName,
+    passwordHash: hash,
+    passwordSalt: salt,
+    instruments,
+    disabled: false,
+    createdAt: Date.now(),
+  };
+  store.update((state) => {
+    if (!Array.isArray(state.users)) state.users = [];
+    state.users.push(user);
+  });
+  return { user: publicUser(user) };
+});
+
+route('PATCH', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
+  requireHost(ctx);
+  const user = store.userById(ctx.params[0]);
+  if (!user) throw new HttpError(404, 'User not found');
+  const body = ctx.body || {};
+
+  if (body.username != null) {
+    const username = parseUsername(body.username);
+    const clash = store.userByUsername(username);
+    if (clash && clash.id !== user.id) throw bad('That username is already taken');
+  }
+
+  store.update(() => {
+    if (body.username != null) user.username = parseUsername(body.username);
+    if (body.displayName != null) {
+      user.displayName = str(body.displayName, { max: 60, field: 'Display name', required: true });
+    }
+    if (body.instruments != null) user.instruments = parseInstruments(body.instruments);
+    if (body.disabled != null) user.disabled = Boolean(body.disabled);
+    if (body.password != null && body.password !== '') {
+      const { salt, hash } = hashPassword(parseNewPassword(body.password));
+      user.passwordSalt = salt;
+      user.passwordHash = hash;
+    }
+  });
+  return { user: publicUser(user) };
+});
+
+route('DELETE', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
+  requireHost(ctx);
+  const user = store.userById(ctx.params[0]);
+  if (!user) throw new HttpError(404, 'User not found');
+  store.update((state) => {
+    state.users = (state.users || []).filter((u) => u.id !== user.id);
+    // Keep tonight's roster rows; just unlink the account.
+    for (const p of state.players) {
+      if (p.userId === user.id) p.userId = null;
+    }
+  });
+  return { ok: true };
 });
 
 route('PATCH', /^\/api\/players\/([\w-]+)$/, (ctx) => {
@@ -497,11 +757,22 @@ route('POST', /^\/api\/host\/commit$/, (ctx) => {
 
   store.update((state) => {
     commitRound(state.players, current, state.roundIndex);
+    const song = state.songs.find((s) => s.id === current.songId) || null;
+    // Snapshot display fields so reports stay readable after songs/players change.
     state.rounds.push({
       index: state.roundIndex,
       songId: current.songId,
+      songTitle: song?.title ?? null,
+      songArtist: song?.artist ?? null,
       playedAt: Date.now(),
-      picks: current.picks.map(({ instrument, playerId }) => ({ instrument, playerId })),
+      picks: current.picks.map(({ instrument, playerId }) => {
+        const player = state.players.find((p) => p.id === playerId);
+        return {
+          instrument,
+          playerId,
+          playerName: player?.name || null,
+        };
+      }),
     });
     state.roundIndex += 1;
     state.current = null;
@@ -607,6 +878,10 @@ function assertNightBackup(night) {
   if (night.players.length > BACKUP_MAX_ROWS || night.songs.length > BACKUP_MAX_ROWS) {
     throw bad('That backup is too large to restore');
   }
+  if (night.users != null) {
+    if (!Array.isArray(night.users)) throw bad('That file does not look like an Amplify night backup');
+    if (night.users.length > BACKUP_MAX_ROWS) throw bad('That backup is too large to restore');
+  }
   if (night.rounds != null && !Array.isArray(night.rounds)) {
     throw bad('That file does not look like an Amplify night backup');
   }
@@ -621,6 +896,14 @@ function assertNightBackup(night) {
     }
     if (s.status != null && !SONG_STATUSES.has(s.status)) {
       throw bad('A song in that backup has an unknown status');
+    }
+  }
+  for (const u of night.users || []) {
+    if (!u || typeof u !== 'object' || typeof u.id !== 'string' || typeof u.username !== 'string') {
+      throw bad('A user in that backup is incomplete');
+    }
+    if (typeof u.passwordHash !== 'string' || typeof u.passwordSalt !== 'string') {
+      throw bad('A user in that backup is missing its password credentials');
     }
   }
 }
@@ -760,6 +1043,14 @@ export async function handleRequest(req, res) {
       return send(res, err.status || 400, { error: err.message });
     }
 
+    const forwarded = req.headers['x-forwarded-for'];
+    // Trust X-Forwarded-For only when a platform/proxy sets it (Vercel), or
+    // when tests opt in via AMPLIFY_TRUST_PROXY. On a bare `node server.js`
+    // the client can spoof the header and dodge the per-IP login throttle.
+    const trustProxy = Boolean(process.env.VERCEL) || process.env.AMPLIFY_TRUST_PROXY === '1';
+    const forwardedIp = trustProxy && typeof forwarded === 'string'
+      ? forwarded.split(',')[0].trim()
+      : '';
     const ctx = {
       params: path.match(match.pattern).slice(1),
       body,
@@ -768,6 +1059,7 @@ export async function handleRequest(req, res) {
       // the browser and stores it; API calls must send x-host-token.
       hostToken: req.headers['x-host-token'] || '',
       playerToken: req.headers['x-player-token'] || '',
+      ip: forwardedIp || req.socket?.remoteAddress || '',
     };
 
     try {
