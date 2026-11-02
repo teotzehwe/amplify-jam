@@ -545,6 +545,7 @@ route('POST', /^\/api\/host\/users$/, (ctx) => {
   store.update((state) => {
     if (!Array.isArray(state.users)) state.users = [];
     state.users.push(user);
+    state.deletedUserIds = (state.deletedUserIds || []).filter((id) => id !== user.id);
   });
   return { user: publicUser(user) };
 });
@@ -593,6 +594,9 @@ route('DELETE', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
   const wasAdmin = user.role === 'admin' && !user.disabled;
   store.update((state) => {
     state.users = (state.users || []).filter((u) => u.id !== user.id);
+    // Tombstone so a stale Supabase row cannot resurrect the account on load.
+    if (!Array.isArray(state.deletedUserIds)) state.deletedUserIds = [];
+    if (!state.deletedUserIds.includes(user.id)) state.deletedUserIds.push(user.id);
     // Keep tonight's roster rows; just unlink the account.
     for (const p of state.players) {
       if (p.userId === user.id) p.userId = null;
@@ -959,6 +963,10 @@ route('GET', /^\/api\/host\/export$/, (ctx) => {
   });
   const snap = structuredClone(store.state);
   delete snap.lastHostExportAt;
+  // Host credentials are not restore material — import keeps the live host
+  // token / sessions so a backup cannot revive revoked console access.
+  delete snap.hostToken;
+  delete snap.hostSessions;
   return {
     format: 'amplify-night-v1',
     exportedAt,
@@ -1040,10 +1048,15 @@ route('POST', /^\/api\/host\/import$/, (ctx) => {
   const night = body.night || body;
   assertNightBackup(night);
   store.update((state) => {
-    // Keep the live host key (env or current night) — a backup must not
-    // silently swap who can open the console. migrate() fills older shapes.
+    // Keep the live host key and console sessions — a backup must not
+    // silently swap who can open the console or revive revoked sessions.
     const hostToken = state.hostToken;
-    const next = migrate(structuredClone(night), hostToken);
+    const liveSessions = state.hostSessions || [];
+    const backup = structuredClone(night);
+    delete backup.hostSessions;
+    delete backup.hostToken;
+    const next = migrate(backup, hostToken);
+    next.hostSessions = liveSessions;
     for (const key of Object.keys(state)) delete state[key];
     Object.assign(state, next);
   });

@@ -52,6 +52,9 @@ function defaultState(hostKey) {
     // Registered accounts (username + password) the host manages. Separate from
     // tonight's roster: a user signs in to claim or resume a player seat.
     users: [],
+    // Ids removed via /host/users — kept so a lagging Supabase row cannot
+    // reappear through the dual-write merge after a failed remote delete.
+    deletedUserIds: [],
     players: [],
     songs: [],
     rounds: [],
@@ -104,6 +107,10 @@ export function migrate(state, hostKey) {
     token: s.token,
     createdAt: s.createdAt || Date.now(),
   })).filter((s) => s.id && s.userId && s.token);
+
+  out.deletedUserIds = [...new Set(
+    (state.deletedUserIds || []).map((id) => String(id || '').trim()).filter(Boolean),
+  )].slice(0, 500);
 
   // A song from before approval existed was already visible to the whole room,
   // so it is approved. Hiding songs people had signed up for would be a worse
@@ -358,8 +365,8 @@ export class Store {
    */
   publicState() {
     // lastHostExportAt is a server-side gate for clearing the night — not for phones.
-    // users / hostSessions stay server-side (hashes and session tokens never leave).
-    const { hostToken, lastHostExportAt, users, hostSessions, ...rest } = this.state;
+    // users / hostSessions / deletedUserIds stay server-side.
+    const { hostToken, lastHostExportAt, users, hostSessions, deletedUserIds, ...rest } = this.state;
     const active = Array.isArray(users) ? users.filter((u) => !u.disabled) : [];
     const needsHostSetup = !active.some((u) => u.role === 'admin');
     return {

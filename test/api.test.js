@@ -840,6 +840,29 @@ test('setup on a night that already has users requires the host key', async () =
   assert.equal(claimed.data.user.role, 'admin');
 });
 
+test('night backups omit host credentials and import keeps live sessions', async () => {
+  const session = await call('/host/login', {
+    method: 'POST',
+    body: { username: 'claimer', password: 'secret1' },
+  });
+  assert.equal(session.status, 200);
+  const exported = await call('/host/export', { host: true });
+  assert.equal(exported.status, 200);
+  assert.equal(exported.data.night.hostToken, undefined);
+  assert.equal(exported.data.night.hostSessions, undefined);
+
+  assert.equal((await call('/host/import', {
+    method: 'POST',
+    body: { night: exported.data.night },
+    host: true,
+  })).status, 200);
+
+  // Live session from before the restore still works.
+  assert.equal((await call('/host/auth', {
+    method: 'POST', body: { token: session.data.token },
+  })).status, 200);
+});
+
 test('demoting an admin revokes their console session', async () => {
   // Keep an owner admin (shared host key) and a second admin with a login session.
   const co = await call('/host/users', {
