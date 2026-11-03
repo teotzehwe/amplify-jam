@@ -52,12 +52,14 @@ export const tokens = {
   set player(v) { v ? localStorage.setItem(KEYS.player, v) : localStorage.removeItem(KEYS.player); },
   get playerId() { return localStorage.getItem(KEYS.playerId) || ''; },
   set playerId(v) { v ? localStorage.setItem(KEYS.playerId, v) : localStorage.removeItem(KEYS.playerId); },
+  // Per-tab so a host picking jam B in another tab cannot redirect this
+  // tab's mutations while its event stream stays on jam A.
   get jam() {
-    return localStorage.getItem(KEYS.jam)
+    return sessionStorage.getItem(KEYS.jam)
       || new URL(location.href).searchParams.get('jam')
       || '';
   },
-  set jam(v) { v ? localStorage.setItem(KEYS.jam, v) : localStorage.removeItem(KEYS.jam); },
+  set jam(v) { v ? sessionStorage.setItem(KEYS.jam, v) : sessionStorage.removeItem(KEYS.jam); },
 };
 
 /* --------------------------------------------------------------------- api */

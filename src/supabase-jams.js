@@ -78,7 +78,13 @@ export class SupabaseJams {
     const rows = await this.request(
       `${TABLE}?org_id=eq.${encodeURIComponent(this.orgId)}&select=*&order=created_at.asc`,
     );
-    if (!Array.isArray(rows)) return [];
+    // A malformed 200 must fail closed — [] would look authoritative and
+    // the next replaceAll would delete remote jam rows.
+    if (!Array.isArray(rows)) {
+      const err = new Error('Jam catalog is unavailable');
+      err.status = 503;
+      throw err;
+    }
     return rows.map(jamFromRow).filter(Boolean);
   }
 

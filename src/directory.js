@@ -80,13 +80,22 @@ class FileDirectoryBackend {
     this.version = 0;
     try {
       mkdirSync(dirname(file), { recursive: true });
-      this.state = existsSync(file)
-        ? migrateDirectory(JSON.parse(readFileSync(file, 'utf8')))
-        : defaultDirectory();
     } catch (err) {
+      // Read-only hosts may not allow mkdir; continue so a missing file can
+      // still start from defaults. An existing file must still load below.
       if (!['ENOENT', 'EROFS', 'EACCES', 'EPERM'].includes(err.code)) throw err;
-      this.state = defaultDirectory();
     }
+    // An existing file must load or fail startup. Never replace it with
+    // defaults — that would let anonymous /api/host/setup wipe accounts.
+    if (!existsSync(file)) {
+      this.state = defaultDirectory();
+      return;
+    }
+    const parsed = JSON.parse(readFileSync(file, 'utf8'));
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error(`${file} does not contain a directory object`);
+    }
+    this.state = migrateDirectory(parsed);
   }
 
   async load() {

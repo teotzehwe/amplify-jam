@@ -99,6 +99,24 @@ function migrateLineup(current) {
   return { songId: current.songId ?? null, picks, createdAt: current.createdAt || Date.now() };
 }
 
+function parseLegacyNightJson(raw, label = 'legacy night') {
+  let parsed;
+  try {
+    parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch {
+    const e = new Error(`${label} JSON is invalid`);
+    e.status = 503;
+    throw e;
+  }
+  // null / arrays / primitives parse successfully but are not a night blob.
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    const e = new Error(`${label} JSON root must be an object`);
+    e.status = 503;
+    throw e;
+  }
+  return parsed;
+}
+
 /* ------------------------------------------------------------ file backend */
 
 class FileBackend {
@@ -106,18 +124,24 @@ class FileBackend {
     this.file = file;
     this.jamName = jamName;
     this.version = 0;
+    let readingLegacy = false;
     try {
       mkdirSync(dirname(file), { recursive: true });
       if (existsSync(file)) {
         this.state = migrate(JSON.parse(readFileSync(file, 'utf8')), jamName);
       } else if (adoptLegacy && legacyFile && existsSync(legacyFile)) {
         // Lifted jam only: adopt the pre-multi-jam night file once.
-        this.state = migrate(JSON.parse(readFileSync(legacyFile, 'utf8')), jamName);
+        // Propagate read/parse failures — never cache defaults over a real blob.
+        readingLegacy = true;
+        this.state = migrate(
+          parseLegacyNightJson(readFileSync(legacyFile, 'utf8')),
+          jamName,
+        );
       } else {
         this.state = defaultState(jamName);
       }
     } catch (err) {
-      if (!['ENOENT', 'EROFS', 'EACCES', 'EPERM'].includes(err.code)) throw err;
+      if (readingLegacy || !['ENOENT', 'EROFS', 'EACCES', 'EPERM'].includes(err.code)) throw err;
       this.state = defaultState(jamName);
     }
   }
@@ -209,7 +233,7 @@ class KvBackend {
         'MGET', this.legacyStateKey, this.legacyVersionKey,
       );
       if (legacyRaw) {
-        const state = migrate(JSON.parse(legacyRaw), this.jamName);
+        const state = migrate(parseLegacyNightJson(legacyRaw), this.jamName);
         return { state, version: 0 };
       }
       this.migratedLegacy = true;
@@ -329,24 +353,6 @@ export class Store {
  * Peek a legacy single-blob night (pre multi-jam) without opening a Store.
  * Used once to lift accounts into the directory.
  */
-function parseLegacyNightJson(raw, label = 'legacy night') {
-  let parsed;
-  try {
-    parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-  } catch (err) {
-    const e = new Error(`${label} JSON is invalid`);
-    e.status = 503;
-    throw e;
-  }
-  // null / arrays / primitives parse successfully but are not a night blob.
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    const e = new Error(`${label} JSON root must be an object`);
-    e.status = 503;
-    throw e;
-  }
-  return parsed;
-}
-
 export async function loadLegacyNightBlob({ dataDir, env = process.env } = {}) {
   const url = env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL;
   const token = env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN;
