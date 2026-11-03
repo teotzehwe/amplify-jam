@@ -175,6 +175,12 @@ class DirectorySyncedBackend {
     this.untrustedJams = new WeakSet();
   }
 
+  /** True when this load's jam catalog may be treated as authoritative. */
+  jamsListTrusted(state) {
+    if (!this.remoteJams) return true;
+    return !this.untrustedJams.has(state);
+  }
+
   async ping() {
     const ok = await this.inner.ping();
     if (!ok) return false;
@@ -354,12 +360,19 @@ export class Directory {
 
   isHost(token) {
     if (!token) return false;
-    return (this.state.hostSessions || []).some((s) => s.token === token);
+    const session = (this.state.hostSessions || []).find((s) => s.token === token);
+    if (!session) return false;
+    const user = this.userById(session.userId);
+    return Boolean(user && user.role === 'admin' && !user.disabled);
   }
 
   hostSession(token) {
     if (!token) return null;
-    return (this.state.hostSessions || []).find((s) => s.token === token) || null;
+    const session = (this.state.hostSessions || []).find((s) => s.token === token) || null;
+    if (!session) return null;
+    const user = this.userById(session.userId);
+    if (!user || user.role !== 'admin' || user.disabled) return null;
+    return session;
   }
 
   userByUsername(username) {
@@ -383,6 +396,17 @@ export class Directory {
   jamById(id) {
     return (this.state.jams || []).find((j) => j.id === id && !j.archived) || null;
   }
+
+  /**
+   * Whether the jam catalog from this load is trusted (successful remote read,
+   * or no remote jam client). Empty + untrusted means "do not invent a legacy jam".
+   */
+  jamsCatalogTrusted() {
+    if (typeof this.backend.jamsListTrusted === 'function') {
+      return this.backend.jamsListTrusted(this.state);
+    }
+    return true;
+  }
 }
 
 /**
@@ -391,15 +415,25 @@ export class Directory {
  */
 export function liftLegacyNight(directoryState, nightState, { defaultName = 'Amplify Open Jam' } = {}) {
   const dir = migrateDirectory(directoryState);
-  if ((dir.users || []).length === 0 && Array.isArray(nightState?.users) && nightState.users.length) {
-    dir.users = nightState.users;
-  }
-  if ((dir.hostSessions || []).length === 0 && Array.isArray(nightState?.hostSessions)) {
-    dir.hostSessions = nightState.hostSessions;
+  const deleted = new Set(dir.deletedUserIds || []);
+  // Merge legacy accounts by id — keep directory records, skip tombstones.
+  if (Array.isArray(nightState?.users) && nightState.users.length) {
+    const byId = new Map((dir.users || []).map((u) => [u.id, u]));
+    for (const u of nightState.users) {
+      if (!u?.id || deleted.has(u.id) || byId.has(u.id)) continue;
+      byId.set(u.id, u);
+    }
+    dir.users = [...byId.values()];
   }
   if ((dir.deletedUserIds || []).length === 0 && Array.isArray(nightState?.deletedUserIds)) {
     dir.deletedUserIds = nightState.deletedUserIds;
   }
+  // Never import legacy host sessions — tokens may outlive demoted/disabled
+  // admins, and Directory.isHost only checks the token. Require a fresh login.
+  const adminIds = new Set(
+    (dir.users || []).filter((u) => u.role === 'admin' && !u.disabled).map((u) => u.id),
+  );
+  dir.hostSessions = (dir.hostSessions || []).filter((s) => adminIds.has(s.userId));
   if ((dir.jams || []).length === 0) {
     dir.jams.push({
       id: newId('jam'),

@@ -96,13 +96,16 @@ async function ensureLegacyLifted() {
     return false;
   }
   // Gate on jam catalog only. Supabase may restore accounts while jams are
-  // still empty — liftLegacyNight keeps those users and creates the
+  // still empty — liftLegacyNight merges missing users and creates the
   // legacyNight jam so the night blob can be adopted.
   const hasJams = (directory.state.jams || []).length > 0;
   if (hasJams) {
     legacyLiftDone = true;
     return false;
   }
+  // Empty local catalog after a failed Supabase jam read is not proof that a
+  // lift is needed — retry later instead of inventing a duplicate legacy jam.
+  if (!directory.jamsCatalogTrusted()) return false;
   directory.update((state) => {
     const lifted = liftLegacyNight(state, legacy);
     state.users = lifted.users;
