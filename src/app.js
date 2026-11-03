@@ -6,6 +6,7 @@
  * Vercel. Zero dependencies either way.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
@@ -32,9 +33,18 @@ const PUBLIC = join(ROOT, 'public');
 /** Org directory: accounts + host sessions + jam catalog. */
 export const directory = openDirectory();
 
-/** Active jam night for the current request (set in handleRequest). */
-let activeJamStore = null;
+/** Jam night store bound to the current request (not a module global). */
+const jamContext = new AsyncLocalStorage();
+const activeJam = () => jamContext.getStore() || null;
 let legacyLiftDone = false;
+
+/** Open a jam night store, adopting a legacy blob only for the lifted jam. */
+function nightStoreFor(jam) {
+  return openJamStore(jam.id, {
+    jamName: jam.name,
+    adoptLegacy: Boolean(jam.legacyNight),
+  });
+}
 
 /**
  * Night store proxy so existing handlers keep saying `store.*`.
@@ -47,6 +57,7 @@ export const store = new Proxy({}, {
     if (prop === 'userByUsername') return (...a) => directory.userByUsername(...a);
     if (prop === 'userById') return (...a) => directory.userById(...a);
     if (prop === 'isHost') return (...a) => directory.isHost(...a);
+    const activeJamStore = activeJam();
     if (!activeJamStore) {
       throw new Error('No jam session selected for this request');
     }
@@ -92,8 +103,10 @@ async function ensureLegacyLifted() {
 
 function resolveJamId(ctx) {
   const fromHeader = String(ctx.jamId || '').trim();
-  if (fromHeader) return fromHeader;
   const jams = directory.publicJams();
+  // Accept a supplied id only when it names an open jam — stale localStorage
+  // / archived ids fall through to the default jam instead of hard-failing.
+  if (fromHeader && jams.some((jam) => jam.id === fromHeader)) return fromHeader;
   // Default to the oldest open jam so single-night deploys and tests keep
   // working without an x-jam-id header. Multi-jam UIs always send the header.
   if (jams.length >= 1) return jams[0].id;
@@ -275,7 +288,7 @@ route('GET', /^\/api\/state$/, (ctx) => {
       roundIndex: 0,
       version: directory.version,
       presets: DEFAULT_INSTRUMENTS,
-      realtime: activeJamStore?.realtime || 'poll',
+      realtime: activeJam()?.realtime || 'poll',
       youId: null,
       isHost: directory.isHost(ctx.hostToken),
       signups: {},
@@ -632,7 +645,7 @@ route('POST', /^\/api\/jams$/, async (ctx) => {
     jam = createJamRecord(state, { name, createdBy: session?.userId || null });
   });
   // Touch the night blob so the jam exists on disk/Redis immediately.
-  const night = openJamStore(jam.id, { jamName: jam.name });
+  const night = nightStoreFor(jam);
   await night.run(() => {
     night.update((state) => {
       state.jam.name = jam.name;
@@ -714,7 +727,7 @@ route('PATCH', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
   return { user: publicUser(user) };
 });
 
-route('DELETE', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
+route('DELETE', /^\/api\/host\/users\/([\w-]+)$/, async (ctx) => {
   requireHost(ctx);
   const user = directory.userById(ctx.params[0]);
   if (!user) throw new HttpError(404, 'User not found');
@@ -726,12 +739,18 @@ route('DELETE', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
     if (!state.deletedUserIds.includes(user.id)) state.deletedUserIds.push(user.id);
     if (wasAdmin) revokeAdminHostAccess(state, user.id);
   });
-  // Unlink from the active jam roster if one is selected.
-  if (activeJamStore) {
-    store.update((state) => {
-      for (const p of state.players) {
-        if (p.userId === user.id) p.userId = null;
-      }
+  // Unlink the account from every jam roster (directory-only path has no
+  // request jam context). Use jamById so legacyNight adoption flags survive.
+  for (const pub of directory.publicJams()) {
+    const jam = directory.jamById(pub.id);
+    if (!jam) continue;
+    const jamStore = nightStoreFor(jam);
+    await jamStore.run(() => {
+      jamStore.update((state) => {
+        for (const p of state.players) {
+          if (p.userId === user.id) p.userId = null;
+        }
+      });
     });
   }
   return { ok: true };
@@ -1187,6 +1206,27 @@ route('POST', /^\/api\/host\/import$/, (ctx) => {
   const night = body.night || body;
   assertNightBackup(night);
   const backupUsers = Array.isArray(night.users) ? structuredClone(night.users) : null;
+  let mergedUsers = null;
+  if (backupUsers) {
+    const restored = backupUsers.map((u) => ({
+      id: u.id,
+      username: String(u.username || '').trim(),
+      displayName: String(u.displayName || u.username || '').trim(),
+      passwordHash: u.passwordHash || '',
+      passwordSalt: u.passwordSalt || '',
+      instruments: Array.isArray(u.instruments) ? u.instruments : [],
+      role: u.role === 'admin' ? 'admin' : 'player',
+      disabled: Boolean(u.disabled),
+      createdAt: u.createdAt || Date.now(),
+    })).filter((u) => u.id && u.username && u.passwordHash && u.passwordSalt);
+    // Keep live accounts on ID conflict; only add missing backup users.
+    const byId = new Map((directory.state.users || []).map((u) => [u.id, u]));
+    for (const u of restored) if (!byId.has(u.id)) byId.set(u.id, u);
+    mergedUsers = [...byId.values()];
+    if (!mergedUsers.some((u) => u.role === 'admin' && !u.disabled)) {
+      throw bad('That backup would leave no admin account');
+    }
+  }
   store.update((state) => {
     const backup = structuredClone(night);
     delete backup.hostSessions;
@@ -1197,22 +1237,13 @@ route('POST', /^\/api\/host\/import$/, (ctx) => {
     for (const key of Object.keys(state)) delete state[key];
     Object.assign(state, next);
   });
-  // Restore accounts into the directory without touching live host sessions.
-  if (backupUsers) {
+  if (mergedUsers) {
     directory.update((state) => {
-      const liveSessions = state.hostSessions || [];
-      state.users = backupUsers.map((u) => ({
-        id: u.id,
-        username: String(u.username || '').trim(),
-        displayName: String(u.displayName || u.username || '').trim(),
-        passwordHash: u.passwordHash || '',
-        passwordSalt: u.passwordSalt || '',
-        instruments: Array.isArray(u.instruments) ? u.instruments : [],
-        role: u.role === 'admin' ? 'admin' : 'player',
-        disabled: Boolean(u.disabled),
-        createdAt: u.createdAt || Date.now(),
-      })).filter((u) => u.id && u.username && u.passwordHash && u.passwordSalt);
-      state.hostSessions = liveSessions;
+      state.users = mergedUsers;
+      const admins = new Set(
+        mergedUsers.filter((u) => u.role === 'admin' && !u.disabled).map((u) => u.id),
+      );
+      state.hostSessions = (state.hostSessions || []).filter((s) => admins.has(s.userId));
     });
   }
   return { ok: true, jam: store.state.jam.name };
@@ -1220,24 +1251,26 @@ route('POST', /^\/api\/host\/import$/, (ctx) => {
 
 /* --------------------------------------------------------------------- SSE */
 
+/** @type {Set<{ res: import('node:http').ServerResponse, jamId: string }>} */
 const clients = new Set();
 
-function attachJamListeners(jamStore) {
+function attachJamListeners(jamStore, jamId) {
   if (jamStore.__amplifySseAttached) return;
   jamStore.__amplifySseAttached = true;
   jamStore.subscribe((version) => {
-    for (const res of clients) {
+    for (const client of clients) {
+      if (client.jamId !== jamId) continue;
       try {
-        res.write(`data: ${version}\n\n`);
+        client.res.write(`data: ${version}\n\n`);
       } catch {
-        clients.delete(res);
+        clients.delete(client);
       }
     }
   });
 }
 
-function streamEvents(res, jamStore) {
-  attachJamListeners(jamStore);
+function streamEvents(res, jamStore, jamId) {
+  attachJamListeners(jamStore, jamId);
   res.writeHead(200, {
     'content-type': 'text/event-stream',
     'cache-control': 'no-cache, no-transform',
@@ -1245,13 +1278,14 @@ function streamEvents(res, jamStore) {
     'x-accel-buffering': 'no',
   });
   res.write(`retry: 2000\n\ndata: ${jamStore.liveVersion}\n\n`);
-  clients.add(res);
+  const client = { res, jamId };
+  clients.add(client);
 
   const beat = setInterval(() => res.write(': ping\n\n'), 25000);
   beat.unref?.();
   res.on('close', () => {
     clearInterval(beat);
-    clients.delete(res);
+    clients.delete(client);
   });
 }
 
@@ -1353,12 +1387,12 @@ export async function handleRequest(req, res) {
             const err = new HttpError(400, 'Pick a jam session first');
             throw err;
           }
-          const jamStore = openJamStore(jam.id, { jamName: jam.name });
+          const jamStore = nightStoreFor(jam);
           if (jamStore.realtime !== 'sse') {
             const err = new HttpError(501, 'Live stream not available here');
             throw err;
           }
-          streamEvents(res, jamStore);
+          streamEvents(res, jamStore, jam.id);
           return { __streamed: true };
         }
 
@@ -1370,26 +1404,20 @@ export async function handleRequest(req, res) {
           || path === '/api/host/users' || /^\/api\/host\/users\//.test(path));
 
         if (!needsNight && path !== '/api/state') {
-          activeJamStore = null;
           return match.handler(ctx) ?? { ok: true };
         }
 
         // /api/state without a jam: directory meta only (gate / picker).
         if (path === '/api/state' && !resolveJamId(ctx)) {
-          activeJamStore = null;
           return match.handler(ctx) ?? { ok: true };
         }
 
         const jamId = resolveJamId(ctx);
         const jam = jamId ? directory.jamById(jamId) : null;
         if (!jam) throw new HttpError(400, 'Pick a jam session first');
-        const jamStore = openJamStore(jam.id, { jamName: jam.name });
-        activeJamStore = jamStore;
-        try {
-          return await jamStore.run(() => match.handler(ctx) ?? { ok: true });
-        } finally {
-          // Keep activeJamStore during nested directory updates in DELETE user.
-        }
+        const jamStore = nightStoreFor(jam);
+        return jamContext.run(jamStore,
+          () => jamStore.run(() => match.handler(ctx) ?? { ok: true }));
       });
 
       if (result?.__streamed) return undefined;

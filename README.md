@@ -160,8 +160,8 @@ There are two parallel setups — keep them separate:
 6. Deploy from each repo’s `main`. `vercel.json` must keep the
    `/api/(.*)` → `/api/[...path]` route so host endpoints like `/api/host/auth`
    work. No build step, no dependencies.
-7. Smoke-check `/api/health` (`hasKv` and `hasSupabaseUsers` true) and open
-   `/host`.
+7. Smoke-check `/api/health` (`hasKv` true; `hasSupabaseUsers` true only when
+   Supabase env vars are set) and open `/host`.
 
 Canonical public URL: `https://amplify-jam.vercel.app`.
 Testing URL: `https://amplify-jam-test.vercel.app`.

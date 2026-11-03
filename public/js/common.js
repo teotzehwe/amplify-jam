@@ -338,7 +338,8 @@ export function subscribe(onState) {
   function connect(mode) {
     if (poll) return; // already connected
     if (mode === 'sse') {
-      events = new EventSource('/api/events');
+      const jamQs = tokens.jam ? `?jam=${encodeURIComponent(tokens.jam)}` : '';
+      events = new EventSource(`/api/events${jamQs}`);
       events.onmessage = () => pull();
       events.onerror = () => {}; // EventSource retries on its own
       poll = setInterval(pull, 10000); // backstop if the stream dies quietly

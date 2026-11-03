@@ -186,7 +186,7 @@ function jamPickerView() {
         el('span', { class: 'hint' }, 'Sessions'),
       ),
       el('p', { class: 'section-note' },
-        'Accounts live in Supabase. Each jam is its own night — songs and roster stay separate.'),
+        'Accounts belong to your organization. Each jam is its own night — songs and roster stay separate.'),
       ...(jamPicker.jams.length
         ? jamPicker.jams.map((j) => el('button', {
             class: 'btn btn--block',
@@ -330,6 +330,10 @@ function console_() {
     songs: approvedSongs(state).length,
     users: usersCache.length,
   };
+  const switchJam = guard(busy(async () => {
+    const data = await api('/jams');
+    openJamPicker(tokens.host, data.jams || []);
+  }, 'host-switch-jam'));
 
   const panelTour = {
     now: 'host-now',
@@ -346,6 +350,10 @@ function console_() {
 
   return el('div', { class: 'stack stack--lg' },
     masthead(state.jam.name, `${pluralize(state.roundIndex, 'song')} played · ${present} here now`,
+      el('button', {
+        class: 'btn btn--ghost btn--sm',
+        onClick: switchJam,
+      }, 'Switch jam'),
       tourButton(ADMIN_TOUR, adminTourSteps, 'Admin tour'),
       el('a', {
         class: 'btn btn--ghost btn--sm',

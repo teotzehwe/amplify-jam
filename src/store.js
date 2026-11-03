@@ -102,15 +102,20 @@ function migrateLineup(current) {
 /* ------------------------------------------------------------ file backend */
 
 class FileBackend {
-  constructor(file, jamName = 'Amplify Open Jam') {
+  constructor(file, jamName = 'Amplify Open Jam', { adoptLegacy = false, legacyFile = null } = {}) {
     this.file = file;
     this.jamName = jamName;
     this.version = 0;
     try {
       mkdirSync(dirname(file), { recursive: true });
-      this.state = existsSync(file)
-        ? migrate(JSON.parse(readFileSync(file, 'utf8')), jamName)
-        : defaultState(jamName);
+      if (existsSync(file)) {
+        this.state = migrate(JSON.parse(readFileSync(file, 'utf8')), jamName);
+      } else if (adoptLegacy && legacyFile && existsSync(legacyFile)) {
+        // Lifted jam only: adopt the pre-multi-jam night file once.
+        this.state = migrate(JSON.parse(readFileSync(legacyFile, 'utf8')), jamName);
+      } else {
+        this.state = defaultState(jamName);
+      }
     } catch (err) {
       if (!['ENOENT', 'EROFS', 'EACCES', 'EPERM'].includes(err.code)) throw err;
       this.state = defaultState(jamName);
@@ -163,15 +168,16 @@ end
 return 0`;
 
 class KvBackend {
-  constructor(url, token, prefix, jamId, jamName = 'Amplify Open Jam') {
+  constructor(url, token, prefix, jamId, jamName = 'Amplify Open Jam', { adoptLegacy = false } = {}) {
     this.url = url.replace(/\/$/, '');
     this.token = token;
     this.jamName = jamName;
     this.stateKey = `${prefix}:jam:${jamId}:state`;
     this.versionKey = `${prefix}:jam:${jamId}:version`;
-    // Legacy single-blob keys — read once to migrate an old night into this jam.
+    // Legacy single-blob keys — only the lifted jam may adopt them.
     this.legacyStateKey = `${prefix}:state`;
     this.legacyVersionKey = `${prefix}:version`;
+    this.adoptLegacy = adoptLegacy;
     this.migratedLegacy = false;
   }
 
@@ -194,15 +200,16 @@ class KvBackend {
       return { state: migrate(JSON.parse(raw), this.jamName), version: Number(version) || 0 };
     }
 
-    // First open of this jam id: copy legacy `{prefix}:state` if present.
-    if (!this.migratedLegacy) {
+    // Lifted jam only: copy legacy `{prefix}:state` once. Version is 0 so the
+    // first per-jam CAS save succeeds (the per-jam version key does not exist).
+    if (this.adoptLegacy && !this.migratedLegacy) {
       this.migratedLegacy = true;
-      const [legacyRaw, legacyVer] = await this.command(
+      const [legacyRaw] = await this.command(
         'MGET', this.legacyStateKey, this.legacyVersionKey,
       );
       if (legacyRaw) {
         const state = migrate(JSON.parse(legacyRaw), this.jamName);
-        return { state, version: Number(legacyVer) || 0 };
+        return { state, version: 0 };
       }
     }
 
@@ -352,7 +359,9 @@ export async function loadLegacyNightBlob({ dataDir, env = process.env } = {}) {
 
 const jamStoreCache = new Map();
 
-export function openJamStore(jamId, { dataDir, env = process.env, jamName } = {}) {
+export function openJamStore(jamId, {
+  dataDir, env = process.env, jamName, adoptLegacy = false,
+} = {}) {
   if (!jamId) throw new Error('jam id required');
   const cacheKey = `${env.KV_PREFIX || 'amplify'}:${jamId}`;
   if (jamStoreCache.has(cacheKey)) return jamStoreCache.get(cacheKey);
@@ -364,10 +373,13 @@ export function openJamStore(jamId, { dataDir, env = process.env, jamName } = {}
 
   let backend;
   if (url && token) {
-    backend = new KvBackend(url, token, prefix, jamId, name);
+    backend = new KvBackend(url, token, prefix, jamId, name, { adoptLegacy });
   } else {
     const dir = dataDir || env.DATA_DIR || join(process.cwd(), 'data');
-    backend = new FileBackend(join(dir, 'jams', `${jamId}.json`), name);
+    backend = new FileBackend(join(dir, 'jams', `${jamId}.json`), name, {
+      adoptLegacy,
+      legacyFile: join(dir, 'jam.json'),
+    });
   }
 
   const store = new Store(backend);

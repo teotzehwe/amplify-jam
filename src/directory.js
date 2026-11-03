@@ -58,6 +58,7 @@ export function migrateDirectory(raw) {
       createdAt: Number(j.createdAt) || Date.now(),
       createdBy: j.createdBy || null,
       archived: Boolean(j.archived),
+      legacyNight: Boolean(j.legacyNight),
     })).filter((j) => j.id),
   };
 }
@@ -187,6 +188,13 @@ class DirectorySyncedBackend {
       remoteUsers = await this.remoteUsers.list();
     } catch {
       if (!Array.isArray(state.users)) state.users = [];
+      if (state.users.length === 0) {
+        // Never treat an unreachable account store as "no accounts":
+        // that would reopen first-admin setup to anyone.
+        const e = new Error('Accounts are unavailable right now — try again shortly');
+        e.status = 503;
+        throw e;
+      }
       return { state, version };
     }
 
@@ -386,6 +394,8 @@ export function liftLegacyNight(directoryState, nightState, { defaultName = 'Amp
       createdAt: nightState?.jam?.createdAt || Date.now(),
       createdBy: null,
       archived: false,
+      // Only this jam may adopt the legacy single-blob night on first open.
+      legacyNight: true,
     });
   }
   return dir;
