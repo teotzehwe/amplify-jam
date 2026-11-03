@@ -95,9 +95,11 @@ async function ensureLegacyLifted() {
     legacyLiftDone = true;
     return false;
   }
-  const emptyDir = (directory.state.users || []).length === 0
-    && (directory.state.jams || []).length === 0;
-  if (!emptyDir) {
+  // Gate on jam catalog only. Supabase may restore accounts while jams are
+  // still empty — liftLegacyNight keeps those users and creates the
+  // legacyNight jam so the night blob can be adopted.
+  const hasJams = (directory.state.jams || []).length > 0;
+  if (hasJams) {
     legacyLiftDone = true;
     return false;
   }
