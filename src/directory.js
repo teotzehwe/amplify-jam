@@ -245,9 +245,12 @@ class DirectorySyncedBackend {
           state.jams = mergeJams(state.jams, remoteJams);
           // Local-only jams (e.g. created while an earlier read failed) must
           // be mirrored now — a read-only session may never dirty-save.
+          // Upsert only the missing rows; replaceAll would delete a jam
+          // another request inserted after list() returned.
           const remoteIds = new Set(remoteJams.map((jam) => jam.id));
-          if (state.jams.some((jam) => !remoteIds.has(jam.id))) {
-            await this.remoteJams.replaceAll(state.jams);
+          const missingJams = state.jams.filter((jam) => !remoteIds.has(jam.id));
+          if (missingJams.length > 0) {
+            await this.remoteJams.upsertAll(missingJams);
           }
           this.untrustedJams.delete(state);
         } else if ((state.jams || []).length > 0) {

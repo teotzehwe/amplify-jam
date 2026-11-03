@@ -113,4 +113,15 @@ export class SupabaseJams {
       prefer: 'resolution=merge-duplicates,return=minimal',
     });
   }
+
+  /** Insert/update rows without deleting other remote jams. */
+  async upsertAll(jams) {
+    const rows = (Array.isArray(jams) ? jams : []).map((j) => rowFromJam(j, this.orgId));
+    if (rows.length === 0) return;
+    await this.request(TABLE, {
+      method: 'POST',
+      body: rows,
+      prefer: 'resolution=merge-duplicates,return=minimal',
+    });
+  }
 }
