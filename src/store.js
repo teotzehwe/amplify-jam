@@ -341,7 +341,14 @@ export async function loadLegacyNightBlob({ dataDir, env = process.env } = {}) {
       body: JSON.stringify(['GET', `${prefix}:state`]),
     });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok || body.error || body.result == null) return null;
+    // Distinguish a missing key (null → no legacy night) from a failed read
+    // (throw → caller leaves legacyLiftDone unset and retries).
+    if (!res.ok || body.error) {
+      const err = new Error(`legacy night read failed: ${body.error || res.status}`);
+      err.status = 503;
+      throw err;
+    }
+    if (body.result == null) return null;
     try {
       return JSON.parse(body.result);
     } catch {

@@ -84,8 +84,10 @@ function isDirectoryOnly(path) {
 
 async function ensureLegacyLifted() {
   if (legacyLiftDone) return;
-  legacyLiftDone = true;
+  // Only mark done after a successful read. A Redis failure must leave the
+  // flag unset so the next request retries the lift.
   const legacy = await loadLegacyNightBlob();
+  legacyLiftDone = true;
   if (!legacy) return;
   const hasAccounts = Array.isArray(legacy.users) && legacy.users.length > 0;
   const emptyDir = (directory.state.users || []).length === 0
@@ -573,11 +575,18 @@ route('POST', /^\/api\/auth\/login$/, async (ctx) => {
  * First-time host setup: create the initial admin when none exist yet.
  * No shared host key — accounts are the source of truth.
  * Also creates the first jam session so the console has somewhere to land.
+ *
+ * If any accounts already exist (even with every admin disabled), setup
+ * requires a live host session — same gate as before HOST_KEY was removed.
+ * Recovery for a locked-out deploy is to re-enable an admin in the directory
+ * / Supabase `amplify_accounts` row, not to reopen anonymous setup.
  */
 route('POST', /^\/api\/host\/setup$/, (ctx) => {
   if (directory.hasAdmins()) {
     throw bad('An admin account already exists — sign in instead');
   }
+  const hasExistingUsers = (directory.state.users || []).length > 0;
+  if (hasExistingUsers) requireHost(ctx);
   const username = parseUsername(ctx.body.username);
   if (directory.userByUsername(username)) throw bad('That username is already taken');
   const displayName = str(ctx.body.displayName || username, { max: 60, field: 'Display name', required: true });

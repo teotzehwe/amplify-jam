@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,6 +58,40 @@ test('local server starts without HOST_KEY and bootstraps via admin setup', asyn
     assert.equal(state.needsHostSetup, false);
     assert.equal(state.setupRequiresHostKey, false);
     assert.equal(state.isHost, true);
+  } finally {
+    proc.kill();
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('host setup stays closed when accounts exist but no enabled admin', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'amplify-locked-setup-'));
+  await writeFile(join(dataDir, 'directory.json'), JSON.stringify({
+    users: [{
+      id: 'usrplayer',
+      username: 'solo',
+      displayName: 'Solo',
+      passwordHash: 'x',
+      passwordSalt: 'y',
+      instruments: [],
+      role: 'player',
+      disabled: false,
+      createdAt: 1,
+    }],
+    hostSessions: [],
+    deletedUserIds: [],
+    jams: [],
+  }));
+  const { proc, base } = await startServer({ DATA_DIR: dataDir });
+  try {
+    const setup = await fetch(`${base}/api/host/setup`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'intruder', displayName: 'Nope', password: 'secret1' }),
+    });
+    assert.equal(setup.status, 403);
+    const body = await setup.json();
+    assert.match(body.error || '', /admin/i);
   } finally {
     proc.kill();
     await rm(dataDir, { recursive: true, force: true });

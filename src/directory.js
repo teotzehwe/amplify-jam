@@ -170,6 +170,9 @@ class DirectorySyncedBackend {
     this.inner = inner;
     this.remoteUsers = remoteUsers;
     this.remoteJams = remoteJams;
+    // States whose remote jam list could not be read — skip replaceAll on save
+    // so a transient Supabase error cannot wipe the catalog.
+    this.untrustedJams = new WeakSet();
   }
 
   async ping() {
@@ -195,6 +198,8 @@ class DirectorySyncedBackend {
         e.status = 503;
         throw e;
       }
+      // We never reached a successful jam list read on this load.
+      if (this.remoteJams) this.untrustedJams.add(state);
       return { state, version };
     }
 
@@ -222,7 +227,10 @@ class DirectorySyncedBackend {
         } else if ((state.jams || []).length > 0) {
           await this.remoteJams.replaceAll(state.jams);
         }
-      } catch { /* jam list stays local */ }
+      } catch {
+        // Keep local jams, but do not mirror them until a later load succeeds.
+        this.untrustedJams.add(state);
+      }
     }
 
     return { state, version };
@@ -242,7 +250,7 @@ class DirectorySyncedBackend {
         }
       }
     }
-    if (this.remoteJams) {
+    if (this.remoteJams && !this.untrustedJams.has(state)) {
       try { await this.remoteJams.replaceAll(state.jams || []); } catch { /* soft */ }
     }
     return true;
