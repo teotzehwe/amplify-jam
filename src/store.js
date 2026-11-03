@@ -329,6 +329,24 @@ export class Store {
  * Peek a legacy single-blob night (pre multi-jam) without opening a Store.
  * Used once to lift accounts into the directory.
  */
+function parseLegacyNightJson(raw, label = 'legacy night') {
+  let parsed;
+  try {
+    parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch (err) {
+    const e = new Error(`${label} JSON is invalid`);
+    e.status = 503;
+    throw e;
+  }
+  // null / arrays / primitives parse successfully but are not a night blob.
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    const e = new Error(`${label} JSON root must be an object`);
+    e.status = 503;
+    throw e;
+  }
+  return parsed;
+}
+
 export async function loadLegacyNightBlob({ dataDir, env = process.env } = {}) {
   const url = env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL;
   const token = env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN;
@@ -349,13 +367,7 @@ export async function loadLegacyNightBlob({ dataDir, env = process.env } = {}) {
       throw err;
     }
     if (body.result == null) return null;
-    try {
-      return JSON.parse(body.result);
-    } catch {
-      const err = new Error('legacy night JSON is invalid');
-      err.status = 503;
-      throw err;
-    }
+    return parseLegacyNightJson(body.result);
   }
 
   const dir = dataDir || env.DATA_DIR || join(process.cwd(), 'data');
@@ -364,8 +376,9 @@ export async function loadLegacyNightBlob({ dataDir, env = process.env } = {}) {
   // An existing file that cannot be read or parsed is a failed read, not an
   // absent night — throw so ensureLegacyLifted leaves legacyLiftDone unset.
   try {
-    return JSON.parse(readFileSync(file, 'utf8'));
+    return parseLegacyNightJson(readFileSync(file, 'utf8'));
   } catch (err) {
+    if (err.status) throw err;
     const e = new Error(`legacy night read failed: ${err.code || err.message}`);
     e.status = 503;
     throw e;
