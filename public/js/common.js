@@ -38,15 +38,26 @@ export function render(container, ...children) {
 
 /* ------------------------------------------------------------------ tokens */
 
-const KEYS = { host: 'amplify.hostKey', player: 'amplify.playerToken', playerId: 'amplify.playerId' };
+const KEYS = {
+  host: 'amplify.hostKey',
+  player: 'amplify.playerToken',
+  playerId: 'amplify.playerId',
+  jam: 'amplify.jamId',
+};
 
 export const tokens = {
-  get host() { return localStorage.getItem(KEYS.host) || new URL(location.href).searchParams.get('k') || ''; },
+  get host() { return localStorage.getItem(KEYS.host) || ''; },
   set host(v) { v ? localStorage.setItem(KEYS.host, v) : localStorage.removeItem(KEYS.host); },
   get player() { return localStorage.getItem(KEYS.player) || ''; },
   set player(v) { v ? localStorage.setItem(KEYS.player, v) : localStorage.removeItem(KEYS.player); },
   get playerId() { return localStorage.getItem(KEYS.playerId) || ''; },
   set playerId(v) { v ? localStorage.setItem(KEYS.playerId, v) : localStorage.removeItem(KEYS.playerId); },
+  get jam() {
+    return localStorage.getItem(KEYS.jam)
+      || new URL(location.href).searchParams.get('jam')
+      || '';
+  },
+  set jam(v) { v ? localStorage.setItem(KEYS.jam, v) : localStorage.removeItem(KEYS.jam); },
 };
 
 /* --------------------------------------------------------------------- api */
@@ -72,6 +83,7 @@ export async function api(path, { method = 'GET', body, as = 'auto' } = {}) {
         ...(body ? { 'content-type': 'application/json' } : {}),
         ...(sendHost ? { 'x-host-token': tokens.host } : {}),
         ...(sendPlayer ? { 'x-player-token': tokens.player } : {}),
+        ...(tokens.jam ? { 'x-jam-id': tokens.jam } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -296,7 +308,7 @@ export function subscribe(onState) {
     } catch (err) {
       console.warn('state refresh failed', err);
       const msg = err.status === 503
-        ? (err.message || 'The jam server is not ready (usually Redis / HOST_KEY).')
+        ? (err.message || 'The jam server is not ready (usually Redis).')
         : last < 0
           ? 'Cannot reach the jam server. Retrying…'
           : 'Connection lost — showing the last update. Retrying…';

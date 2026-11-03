@@ -11,7 +11,10 @@ import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { openStore, newId, DEFAULT_INSTRUMENTS, migrate } from './store.js';
+import {
+  openJamStore, newId, DEFAULT_INSTRUMENTS, migrate, loadLegacyNightBlob,
+} from './store.js';
+import { openDirectory, liftLegacyNight } from './directory.js';
 import { supabaseUsersConfigured } from './supabase-users.js';
 import { commitRound, instrumentFor, mayPlay, signupsFor, STANCES, LEVELS } from './signups.js';
 import { buildPdf } from './pdf.js';
@@ -26,7 +29,76 @@ import {
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PUBLIC = join(ROOT, 'public');
 
-export const store = openStore();
+/** Org directory: accounts + host sessions + jam catalog. */
+export const directory = openDirectory();
+
+/** Active jam night for the current request (set in handleRequest). */
+let activeJamStore = null;
+let legacyLiftDone = false;
+
+/**
+ * Night store proxy so existing handlers keep saying `store.*`.
+ * Account helpers live on `directory`; night ops use the selected jam.
+ */
+export const store = new Proxy({}, {
+  get(_t, prop) {
+    if (prop === 'hasAdmins') return (...a) => directory.hasAdmins(...a);
+    if (prop === 'adminUsers') return (...a) => directory.adminUsers(...a);
+    if (prop === 'userByUsername') return (...a) => directory.userByUsername(...a);
+    if (prop === 'userById') return (...a) => directory.userById(...a);
+    if (prop === 'isHost') return (...a) => directory.isHost(...a);
+    if (!activeJamStore) {
+      throw new Error('No jam session selected for this request');
+    }
+    const val = activeJamStore[prop];
+    return typeof val === 'function' ? val.bind(activeJamStore) : val;
+  },
+});
+
+const DIRECTORY_ONLY = new Set([
+  '/api/health',
+  '/api/host/setup',
+  '/api/host/login',
+  '/api/host/auth',
+  '/api/host/users',
+  '/api/jams',
+]);
+
+function isDirectoryOnly(path) {
+  if (DIRECTORY_ONLY.has(path)) return true;
+  if (/^\/api\/host\/users\/[\w-]+$/.test(path)) return true;
+  if (path === '/api/jams' || /^\/api\/jams\/[\w-]+$/.test(path)) return true;
+  return false;
+}
+
+async function ensureLegacyLifted() {
+  if (legacyLiftDone) return;
+  legacyLiftDone = true;
+  const legacy = await loadLegacyNightBlob();
+  if (!legacy) return;
+  const hasAccounts = Array.isArray(legacy.users) && legacy.users.length > 0;
+  const emptyDir = (directory.state.users || []).length === 0
+    && (directory.state.jams || []).length === 0;
+  if (!emptyDir && !hasAccounts) return;
+  if (!emptyDir) return;
+  directory.update((state) => {
+    const lifted = liftLegacyNight(state, legacy);
+    state.users = lifted.users;
+    state.hostSessions = lifted.hostSessions;
+    state.deletedUserIds = lifted.deletedUserIds;
+    state.jams = lifted.jams;
+  });
+}
+
+function resolveJamId(ctx) {
+  const fromHeader = String(ctx.jamId || '').trim();
+  if (fromHeader) return fromHeader;
+  const jams = directory.publicJams();
+  // Default to the oldest open jam so single-night deploys and tests keep
+  // working without an x-jam-id header. Multi-jam UIs always send the header.
+  if (jams.length >= 1) return jams[0].id;
+  return '';
+}
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -181,21 +253,44 @@ function deckSong(state) {
 const routes = [];
 const route = (method, pattern, handler) => routes.push({ method, pattern, handler });
 
-/** Anything under /api/host/* additionally requires the host token. */
+/** Host console routes require an admin session token (x-host-token). */
 function requireHost(ctx) {
-  if (!store.isHost(ctx.hostToken)) throw new HttpError(403, 'Host key required');
+  if (!directory.isHost(ctx.hostToken)) throw new HttpError(403, 'Sign in as an admin first');
 }
 
 route('GET', /^\/api\/state$/, (ctx) => {
+  const meta = directory.publicMeta();
+  const jamId = resolveJamId(ctx);
+  const jam = jamId ? directory.jamById(jamId) : null;
+  if (!jam) {
+    return {
+      ...meta,
+      jamId: null,
+      jams: directory.isHost(ctx.hostToken) ? directory.publicJams() : undefined,
+      jam: { name: 'Amplify', allowSuggestions: true, requireApproval: true, slots: [] },
+      players: [],
+      songs: [],
+      rounds: [],
+      current: null,
+      roundIndex: 0,
+      version: directory.version,
+      presets: DEFAULT_INSTRUMENTS,
+      realtime: activeJamStore?.realtime || 'poll',
+      youId: null,
+      isHost: directory.isHost(ctx.hostToken),
+      signups: {},
+    };
+  }
   const me = store.playerByToken(ctx.playerToken);
   return {
     ...store.publicState(),
+    ...meta,
+    jamId: jam.id,
+    jams: directory.isHost(ctx.hostToken) ? directory.publicJams() : undefined,
     presets: DEFAULT_INSTRUMENTS,
     realtime: store.realtime,
     youId: me?.id || null,
-    isHost: store.isHost(ctx.hostToken),
-    // Who put their name down for each song. This is the whole queue: the
-    // stage display reads it out and the host picks the band from it.
+    isHost: directory.isHost(ctx.hostToken),
     signups: Object.fromEntries(
       store.state.songs
         .filter((s) => s.status === 'approved' || s.status === 'pending')
@@ -358,7 +453,7 @@ async function authenticateAccount(ctx, usernameRaw, passwordRaw, { roles = null
   const ip = clientIp(ctx);
   beginLoginAttempt(ip, username);
 
-  const user = store.userByUsername(username);
+  const user = directory.userByUsername(username);
   // Always pay scrypt cost (dummy salt/hash when unknown) so timing cannot
   // enumerate which usernames exist — including disabled accounts.
   const salt = user?.passwordSalt || DUMMY_CREDENTIAL.salt;
@@ -382,7 +477,7 @@ function parseRole(value, fallback = 'player') {
 
 function assertNotLastAdmin(user, { removing = false, demoting = false, disabling = false } = {}) {
   if (user.role !== 'admin' || user.disabled) return;
-  const others = store.adminUsers().filter((u) => u.id !== user.id);
+  const others = directory.adminUsers().filter((u) => u.id !== user.id);
   if (others.length > 0) return;
   if (removing) throw bad('Create another admin before removing this one');
   if (demoting) throw bad('Create another admin before demoting this one');
@@ -402,14 +497,22 @@ function issueHostSession(state, userId) {
   return session.token;
 }
 
-/**
- * Drop console sessions for an admin who lost access. Login/setup issue
- * per-admin session tokens (not the shared hostToken), so revoking those
- * sessions cuts off demoted admins even when HOST_KEY is fixed by the env
- * and cannot be rotated.
- */
+/** Drop console sessions for an admin who lost access. */
 function revokeAdminHostAccess(state, userId) {
   state.hostSessions = (state.hostSessions || []).filter((s) => s.userId !== userId);
+}
+
+function createJamRecord(state, { name, createdBy }) {
+  if (!Array.isArray(state.jams)) state.jams = [];
+  const jam = {
+    id: newId('jam'),
+    name: name || 'Amplify Open Jam',
+    createdAt: Date.now(),
+    createdBy: createdBy || null,
+    archived: false,
+  };
+  state.jams.push(jam);
+  return jam;
 }
 
 /**
@@ -455,18 +558,15 @@ route('POST', /^\/api\/auth\/login$/, async (ctx) => {
 
 /**
  * First-time host setup: create the initial admin when none exist yet.
- * Open only on a truly empty night with no env HOST_KEY. Upgraded nights that
- * already have musician accounts (or a configured key) still need the host key
- * so a visitor cannot claim the console and export password hashes.
+ * No shared host key — accounts are the source of truth.
+ * Also creates the first jam session so the console has somewhere to land.
  */
 route('POST', /^\/api\/host\/setup$/, (ctx) => {
-  if (store.hasAdmins()) {
+  if (directory.hasAdmins()) {
     throw bad('An admin account already exists — sign in instead');
   }
-  const hasExistingUsers = (store.state.users || []).length > 0;
-  if (hasExistingUsers || process.env.HOST_KEY) requireHost(ctx);
   const username = parseUsername(ctx.body.username);
-  if (store.userByUsername(username)) throw bad('That username is already taken');
+  if (directory.userByUsername(username)) throw bad('That username is already taken');
   const displayName = str(ctx.body.displayName || username, { max: 60, field: 'Display name', required: true });
   const password = parseNewPassword(ctx.body.password);
   const { salt, hash } = hashPassword(password);
@@ -482,28 +582,31 @@ route('POST', /^\/api\/host\/setup$/, (ctx) => {
     createdAt: Date.now(),
   };
   let sessionToken;
-  store.update((state) => {
+  let jam;
+  directory.update((state) => {
     if (!Array.isArray(state.users)) state.users = [];
     state.users.push(user);
     sessionToken = issueHostSession(state, user.id);
+    if (!(state.jams || []).some((j) => !j.archived)) {
+      jam = createJamRecord(state, { name: 'Amplify Open Jam', createdBy: user.id });
+    } else {
+      jam = state.jams.find((j) => !j.archived);
+    }
   });
   return {
     token: sessionToken,
     user: publicUser(user),
+    jam: jam ? { id: jam.id, name: jam.name } : null,
   };
 });
 
-/**
- * Admin sign-in for the host console. Returns a per-admin session token so
- * demoting/disabling that admin can revoke console access without rotating an
- * environment-supplied HOST_KEY.
- */
+/** Admin sign-in for the host console. Returns a per-admin session token. */
 route('POST', /^\/api\/host\/login$/, async (ctx) => {
   const user = await authenticateAccount(ctx, ctx.body.username, ctx.body.password, {
     roles: ['admin'],
   });
   let sessionToken;
-  store.update((state) => {
+  directory.update((state) => {
     sessionToken = issueHostSession(state, user.id);
   });
   return {
@@ -511,20 +614,44 @@ route('POST', /^\/api\/host\/login$/, async (ctx) => {
     username: user.username,
     displayName: user.displayName,
     userId: user.id,
+    jams: directory.publicJams(),
   };
+});
+
+route('GET', /^\/api\/jams$/, (ctx) => {
+  requireHost(ctx);
+  return { jams: directory.publicJams() };
+});
+
+route('POST', /^\/api\/jams$/, async (ctx) => {
+  requireHost(ctx);
+  const session = directory.hostSession(ctx.hostToken);
+  const name = str(ctx.body.name || 'Amplify Open Jam', { max: 60, field: 'Name', required: true });
+  let jam;
+  directory.update((state) => {
+    jam = createJamRecord(state, { name, createdBy: session?.userId || null });
+  });
+  // Touch the night blob so the jam exists on disk/Redis immediately.
+  const night = openJamStore(jam.id, { jamName: jam.name });
+  await night.run(() => {
+    night.update((state) => {
+      state.jam.name = jam.name;
+    });
+  });
+  return { jam: { id: jam.id, name: jam.name, createdAt: jam.createdAt, createdBy: jam.createdBy } };
 });
 
 route('GET', /^\/api\/host\/users$/, (ctx) => {
   requireHost(ctx);
   return {
-    users: (store.state.users || []).map(publicUser),
+    users: (directory.state.users || []).map(publicUser),
   };
 });
 
 route('POST', /^\/api\/host\/users$/, (ctx) => {
   requireHost(ctx);
   const username = parseUsername(ctx.body.username);
-  if (store.userByUsername(username)) throw bad('That username is already taken');
+  if (directory.userByUsername(username)) throw bad('That username is already taken');
   const displayName = str(ctx.body.displayName || username, { max: 60, field: 'Display name', required: true });
   const password = parseNewPassword(ctx.body.password);
   const role = parseRole(ctx.body.role, 'player');
@@ -543,7 +670,7 @@ route('POST', /^\/api\/host\/users$/, (ctx) => {
     disabled: false,
     createdAt: Date.now(),
   };
-  store.update((state) => {
+  directory.update((state) => {
     if (!Array.isArray(state.users)) state.users = [];
     state.users.push(user);
     state.deletedUserIds = (state.deletedUserIds || []).filter((id) => id !== user.id);
@@ -553,13 +680,13 @@ route('POST', /^\/api\/host\/users$/, (ctx) => {
 
 route('PATCH', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
   requireHost(ctx);
-  const user = store.userById(ctx.params[0]);
+  const user = directory.userById(ctx.params[0]);
   if (!user) throw new HttpError(404, 'User not found');
   const body = ctx.body || {};
 
   if (body.username != null) {
     const username = parseUsername(body.username);
-    const clash = store.userByUsername(username);
+    const clash = directory.userByUsername(username);
     if (clash && clash.id !== user.id) throw bad('That username is already taken');
   }
 
@@ -569,7 +696,7 @@ route('PATCH', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
   const disabling = !user.disabled && nextDisabled;
   assertNotLastAdmin(user, { demoting, disabling });
 
-  store.update((state) => {
+  directory.update((state) => {
     if (body.username != null) user.username = parseUsername(body.username);
     if (body.displayName != null) {
       user.displayName = str(body.displayName, { max: 60, field: 'Display name', required: true });
@@ -589,21 +716,24 @@ route('PATCH', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
 
 route('DELETE', /^\/api\/host\/users\/([\w-]+)$/, (ctx) => {
   requireHost(ctx);
-  const user = store.userById(ctx.params[0]);
+  const user = directory.userById(ctx.params[0]);
   if (!user) throw new HttpError(404, 'User not found');
   assertNotLastAdmin(user, { removing: true });
   const wasAdmin = user.role === 'admin' && !user.disabled;
-  store.update((state) => {
+  directory.update((state) => {
     state.users = (state.users || []).filter((u) => u.id !== user.id);
-    // Tombstone so a stale Supabase row cannot resurrect the account on load.
     if (!Array.isArray(state.deletedUserIds)) state.deletedUserIds = [];
     if (!state.deletedUserIds.includes(user.id)) state.deletedUserIds.push(user.id);
-    // Keep tonight's roster rows; just unlink the account.
-    for (const p of state.players) {
-      if (p.userId === user.id) p.userId = null;
-    }
     if (wasAdmin) revokeAdminHostAccess(state, user.id);
   });
+  // Unlink from the active jam roster if one is selected.
+  if (activeJamStore) {
+    store.update((state) => {
+      for (const p of state.players) {
+        if (p.userId === user.id) p.userId = null;
+      }
+    });
+  }
   return { ok: true };
 });
 
@@ -791,8 +921,15 @@ route('POST', /^\/api\/host\/songs\/order$/, (ctx) => {
 });
 
 route('POST', /^\/api\/host\/auth$/, (ctx) => {
-  if (!store.isHost(ctx.body.token)) throw new HttpError(403, 'That key does not match');
-  return { ok: true, jam: store.state.jam.name };
+  if (!directory.isHost(ctx.body.token)) throw new HttpError(403, 'That key does not match');
+  const jamId = resolveJamId(ctx);
+  const jam = jamId ? directory.jamById(jamId) : null;
+  return {
+    ok: true,
+    jam: jam?.name || null,
+    jamId: jam?.id || null,
+    jams: directory.publicJams(),
+  };
 });
 
 route('PATCH', /^\/api\/host\/settings$/, (ctx) => {
@@ -964,14 +1101,15 @@ route('GET', /^\/api\/host\/export$/, (ctx) => {
   });
   const snap = structuredClone(store.state);
   delete snap.lastHostExportAt;
-  // Host credentials are not restore material — import keeps the live host
-  // token / sessions so a backup cannot revive revoked console access.
   delete snap.hostToken;
   delete snap.hostSessions;
+  // Include accounts so a full restore can rebuild the org directory.
+  snap.users = structuredClone(directory.state.users || []);
   return {
     format: 'amplify-night-v1',
     exportedAt,
     version: store.version,
+    jamId: resolveJamId(ctx) || null,
     night: snap,
   };
 });
@@ -1048,19 +1186,35 @@ route('POST', /^\/api\/host\/import$/, (ctx) => {
   const body = ctx.body || {};
   const night = body.night || body;
   assertNightBackup(night);
+  const backupUsers = Array.isArray(night.users) ? structuredClone(night.users) : null;
   store.update((state) => {
-    // Keep the live host key and console sessions — a backup must not
-    // silently swap who can open the console or revive revoked sessions.
-    const hostToken = state.hostToken;
-    const liveSessions = state.hostSessions || [];
     const backup = structuredClone(night);
     delete backup.hostSessions;
     delete backup.hostToken;
-    const next = migrate(backup, hostToken);
-    next.hostSessions = liveSessions;
+    delete backup.users;
+    delete backup.deletedUserIds;
+    const next = migrate(backup);
     for (const key of Object.keys(state)) delete state[key];
     Object.assign(state, next);
   });
+  // Restore accounts into the directory without touching live host sessions.
+  if (backupUsers) {
+    directory.update((state) => {
+      const liveSessions = state.hostSessions || [];
+      state.users = backupUsers.map((u) => ({
+        id: u.id,
+        username: String(u.username || '').trim(),
+        displayName: String(u.displayName || u.username || '').trim(),
+        passwordHash: u.passwordHash || '',
+        passwordSalt: u.passwordSalt || '',
+        instruments: Array.isArray(u.instruments) ? u.instruments : [],
+        role: u.role === 'admin' ? 'admin' : 'player',
+        disabled: Boolean(u.disabled),
+        createdAt: u.createdAt || Date.now(),
+      })).filter((u) => u.id && u.username && u.passwordHash && u.passwordSalt);
+      state.hostSessions = liveSessions;
+    });
+  }
   return { ok: true, jam: store.state.jam.name };
 });
 
@@ -1068,27 +1222,29 @@ route('POST', /^\/api\/host\/import$/, (ctx) => {
 
 const clients = new Set();
 
-store.subscribe((version) => {
-  for (const res of clients) {
-    // A client that vanished mid-write must not stop the others from being
-    // notified — nor bubble a socket error up into the request that made
-    // the change.
-    try {
-      res.write(`data: ${version}\n\n`);
-    } catch {
-      clients.delete(res);
+function attachJamListeners(jamStore) {
+  if (jamStore.__amplifySseAttached) return;
+  jamStore.__amplifySseAttached = true;
+  jamStore.subscribe((version) => {
+    for (const res of clients) {
+      try {
+        res.write(`data: ${version}\n\n`);
+      } catch {
+        clients.delete(res);
+      }
     }
-  }
-});
+  });
+}
 
-function streamEvents(res) {
+function streamEvents(res, jamStore) {
+  attachJamListeners(jamStore);
   res.writeHead(200, {
     'content-type': 'text/event-stream',
     'cache-control': 'no-cache, no-transform',
     connection: 'keep-alive',
     'x-accel-buffering': 'no',
   });
-  res.write(`retry: 2000\n\ndata: ${store.liveVersion}\n\n`);
+  res.write(`retry: 2000\n\ndata: ${jamStore.liveVersion}\n\n`);
   clients.add(res);
 
   const beat = setInterval(() => res.write(': ping\n\n'), 25000);
@@ -1129,83 +1285,114 @@ export async function handleRequest(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const path = url.pathname;
 
-  if (path === '/api/events') {
-    if (store.realtime !== 'sse') return send(res, 501, { error: 'Live stream not available here' });
-    return streamEvents(res);
-  }
-
   if (path.startsWith('/api/')) {
     // Ops probe — available even when the jam is misconfigured.
     if (path === '/api/health' && (req.method === 'GET' || req.method === 'HEAD')) {
-      const hasKv = store.realtime === 'poll';
+      const urlKv = Boolean(process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL);
+      const tokenKv = Boolean(process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN);
+      const hasKv = urlKv && tokenKv;
       let storeOk = true;
       try {
-        storeOk = await store.ping();
+        storeOk = await directory.ping();
       } catch {
         storeOk = false;
       }
-      const ok = storeOk && (!process.env.VERCEL || (hasKv && Boolean(process.env.HOST_KEY)));
+      const ok = storeOk && (!process.env.VERCEL || hasKv);
       return send(res, ok ? 200 : 503, {
         ok,
         storeOk,
-        realtime: store.realtime,
+        realtime: hasKv ? 'poll' : 'sse',
         hasKv,
-        hasHostKey: Boolean(process.env.HOST_KEY),
         hasSupabaseUsers: supabaseUsersConfigured(),
         vercel: Boolean(process.env.VERCEL),
       });
     }
 
-    // On Vercel the file backend cannot persist (read-only /var/task). Without a
-    // Redis/KV store, every instance invents its own night and writes 500. Say
-    // so before a join looks like a broken form.
-    if (process.env.VERCEL && store.realtime === 'sse') {
+    // On Vercel the file backend cannot persist (read-only /var/task).
+    if (process.env.VERCEL && !(
+      (process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL)
+      && (process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN)
+    )) {
       return send(res, 503, {
-        error: 'No key-value store configured. In Vercel → Storage, add Upstash Redis (sets KV_REST_API_URL and KV_REST_API_TOKEN), set HOST_KEY, then redeploy.',
-      });
-    }
-
-    // Hosted deploys never print a generated key. Without HOST_KEY the console
-    // is permanently locked — fail loud at the door instead of at unlock time.
-    if (process.env.VERCEL && !process.env.HOST_KEY) {
-      return send(res, 503, {
-        error: 'HOST_KEY is not set. Add it under Vercel → Settings → Environment Variables, then redeploy.',
+        error: 'No key-value store configured. In Vercel → Storage, add Upstash Redis (sets KV_REST_API_URL and KV_REST_API_TOKEN), then redeploy.',
       });
     }
 
     const match = routes.find((r) => r.method === req.method && r.pattern.test(path));
-    if (!match) return send(res, 404, { error: 'Unknown endpoint' });
+    if (!match && path !== '/api/events') return send(res, 404, { error: 'Unknown endpoint' });
 
     let body;
     try {
-      body = req.method === 'GET' ? {} : await readBody(req);
+      body = (req.method === 'GET' || path === '/api/events') ? {} : await readBody(req);
     } catch (err) {
       return send(res, err.status || 400, { error: err.message });
     }
 
     const forwarded = req.headers['x-forwarded-for'];
-    // Trust X-Forwarded-For only when a platform/proxy sets it (Vercel), or
-    // when tests opt in via AMPLIFY_TRUST_PROXY. On a bare `node server.js`
-    // the client can spoof the header and dodge the per-IP login throttle.
     const trustProxy = Boolean(process.env.VERCEL) || process.env.AMPLIFY_TRUST_PROXY === '1';
     const forwardedIp = trustProxy && typeof forwarded === 'string'
       ? forwarded.split(',')[0].trim()
       : '';
     const ctx = {
-      params: path.match(match.pattern).slice(1),
+      params: match ? path.match(match.pattern).slice(1) : [],
       body,
-      // Host key on the query string used to work for convenience, but ?k=
-      // leaks via Referer and access logs. The /host page still reads ?k= in
-      // the browser and stores it; API calls must send x-host-token.
       hostToken: req.headers['x-host-token'] || '',
       playerToken: req.headers['x-player-token'] || '',
+      jamId: req.headers['x-jam-id'] || url.searchParams.get('jam') || '',
       ip: forwardedIp || req.socket?.remoteAddress || '',
     };
 
     try {
-      const result = await store.run(() => match.handler(ctx) ?? { ok: true });
-      // Host session report returns a PDF buffer — not JSON. Hand it through
-      // as application/pdf so the browser can download it directly.
+      const result = await directory.run(async () => {
+        await ensureLegacyLifted();
+
+        if (path === '/api/events') {
+          const jamId = resolveJamId(ctx);
+          const jam = jamId ? directory.jamById(jamId) : null;
+          if (!jam) {
+            const err = new HttpError(400, 'Pick a jam session first');
+            throw err;
+          }
+          const jamStore = openJamStore(jam.id, { jamName: jam.name });
+          if (jamStore.realtime !== 'sse') {
+            const err = new HttpError(501, 'Live stream not available here');
+            throw err;
+          }
+          streamEvents(res, jamStore);
+          return { __streamed: true };
+        }
+
+        const dirOnly = isDirectoryOnly(path)
+          || (path === '/api/state' && !resolveJamId(ctx) && !directory.publicJams().length);
+        // /api/state with a resolvable jam still needs the night blob.
+        const needsNight = !dirOnly && !(path === '/api/host/setup' || path === '/api/host/login'
+          || path === '/api/host/auth' || path === '/api/jams'
+          || path === '/api/host/users' || /^\/api\/host\/users\//.test(path));
+
+        if (!needsNight && path !== '/api/state') {
+          activeJamStore = null;
+          return match.handler(ctx) ?? { ok: true };
+        }
+
+        // /api/state without a jam: directory meta only (gate / picker).
+        if (path === '/api/state' && !resolveJamId(ctx)) {
+          activeJamStore = null;
+          return match.handler(ctx) ?? { ok: true };
+        }
+
+        const jamId = resolveJamId(ctx);
+        const jam = jamId ? directory.jamById(jamId) : null;
+        if (!jam) throw new HttpError(400, 'Pick a jam session first');
+        const jamStore = openJamStore(jam.id, { jamName: jam.name });
+        activeJamStore = jamStore;
+        try {
+          return await jamStore.run(() => match.handler(ctx) ?? { ok: true });
+        } finally {
+          // Keep activeJamStore during nested directory updates in DELETE user.
+        }
+      });
+
+      if (result?.__streamed) return undefined;
       if (result && Buffer.isBuffer(result.__pdf)) {
         const name = String(result.filename || 'session-report.pdf').replace(/[^\w.-]+/g, '-');
         return send(res, 200, result.__pdf, {

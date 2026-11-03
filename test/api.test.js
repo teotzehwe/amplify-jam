@@ -41,18 +41,30 @@ before(async () => {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  hostKey = await new Promise((resolve, reject) => {
+  await new Promise((resolve, reject) => {
     let buffer = '';
     const timer = setTimeout(() => reject(new Error('server did not start')), 10000);
     server.stdout.on('data', (chunk) => {
       buffer += chunk;
-      const match = buffer.match(/Host key: (\w+)/);
-      if (!match) return;
+      if (!/\bReady\.\s*$/m.test(buffer) && !buffer.includes('Ready.')) return;
       clearTimeout(timer);
-      resolve(match[1]);
+      resolve();
     });
     server.stderr.on('data', (c) => process.stderr.write(c));
   });
+
+  // Accounts-first: bootstrap an admin session (no shared HOST_KEY).
+  const setup = await fetch(`${base}/api/host/setup`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      username: 'testadmin', displayName: 'Test Admin', password: 'secret1',
+    }),
+  });
+  const setupBody = await setup.json().catch(() => ({}));
+  assert.equal(setup.status, 200, JSON.stringify(setupBody));
+  hostKey = setupBody.token;
+  assert.ok(hostKey);
 });
 
 after(async () => {
@@ -151,11 +163,11 @@ test('host endpoints reject a missing or wrong key', async () => {
   assert.equal((await call('/host/songs/ghost/approve', { method: 'POST' })).status, 403);
 });
 
-test('the host key in a query string does not unlock API routes', async () => {
-  // ?k= is for the /host page bookmark only; API auth is header-only.
+test('a session token in a query string does not unlock API routes', async () => {
+  // API auth is header-only (x-host-token); query strings must not grant access.
   const res = await fetch(`${base}/api/host/export?k=${encodeURIComponent(hostKey)}`);
   assert.equal(res.status, 403);
-  assert.match((await res.json()).error, /Host key required/);
+  assert.match((await res.json()).error, /Sign in as an admin/i);
 });
 
 test('a player may edit their own sign-up but not anybody else’s', async () => {
@@ -577,7 +589,7 @@ test('health reports store mode without secrets', async () => {
   assert.equal(res.data.storeOk, true);
   assert.equal(res.data.realtime, 'sse');
   assert.equal(res.data.hasKv, false);
-  assert.equal(res.data.hasHostKey, false);
+  assert.equal(res.data.hasHostKey, undefined);
   assert.equal(res.data.hasSupabaseUsers, false);
   assert.equal(res.data.hostToken, undefined);
 });
@@ -718,31 +730,10 @@ test('import refuses backups with incomplete players or unknown song status', as
   assert.ok(!data.songs.some((s) => s.status === 'mystery'));
 });
 
-test('admins set up the host console and musicians sign in on the phone', async () => {
-  const before = await call('/state');
-  assert.equal(before.data.hasUsers, false);
-  assert.equal(before.data.needsHostSetup, true);
-
-  assert.equal((await call('/host/users', { method: 'POST', body: {
-    username: 'alex', displayName: 'Alex', password: 'secret1',
-  } })).status, 403);
-
-  // First admin on an empty night — no host token required.
-  const setup = await call('/host/setup', {
-    method: 'POST',
-    body: { username: 'boss', displayName: 'Boss', password: 'secret1' },
-  });
-  assert.equal(setup.status, 200);
-  assert.ok(setup.data.token);
-  assert.equal(setup.data.user.role, 'admin');
-  assert.equal(setup.data.user.passwordHash, undefined);
+test('admins manage accounts and musicians sign in on the phone', async () => {
   assert.equal((await call('/state')).data.needsHostSetup, false);
-  // Session token unlocks host routes.
-  assert.equal((await call('/host/auth', {
-    method: 'POST', body: { token: setup.data.token },
-  })).status, 200);
 
-  // Setup only works once.
+  // Setup only works once (boot already created testadmin).
   assert.equal((await call('/host/setup', {
     method: 'POST',
     body: { username: 'other', displayName: 'Other', password: 'secret1' },
@@ -750,12 +741,12 @@ test('admins set up the host console and musicians sign in on the phone', async 
 
   const hostLogin = await call('/host/login', {
     method: 'POST',
-    body: { username: 'boss', password: 'secret1' },
+    body: { username: 'testadmin', password: 'secret1' },
   });
   assert.equal(hostLogin.status, 200);
   assert.ok(hostLogin.data.token);
-  // Each login gets its own session — not the shared night key.
-  assert.notEqual(hostLogin.data.token, setup.data.token);
+  assert.ok(Array.isArray(hostLogin.data.jams));
+  assert.ok(hostLogin.data.jams.length >= 1);
 
   const created = await call('/host/users', {
     method: 'POST',
@@ -779,6 +770,7 @@ test('admins set up the host console and musicians sign in on the phone', async 
   assert.equal(pub.data.hasUsers, true);
   assert.equal(pub.data.users, undefined);
   assert.equal(pub.data.hostSessions, undefined);
+  assert.equal(pub.data.setupRequiresHostKey, false);
 
   assert.equal((await call('/auth/login', {
     method: 'POST', body: { username: 'alex', password: 'nope' },
@@ -808,49 +800,35 @@ test('admins set up the host console and musicians sign in on the phone', async 
   assert.equal((await call('/state', { player: again.data.token })).data.youId, login.data.id);
 
   // Cannot remove the last admin.
-  const boss = listed.data.users.find((u) => u.username === 'boss');
+  const boss = listed.data.users.find((u) => u.username === 'testadmin');
   assert.equal((await call(`/host/users/${boss.id}`, { method: 'DELETE', host: true })).status, 400);
 });
 
-test('setup on a night that already has users requires the host key', async () => {
-  // Simulate an upgraded night: musician accounts remain, but no admin role.
-  const exported = await call('/host/export', { host: true });
-  const night = structuredClone(exported.data.night);
-  assert.ok((night.users || []).length > 0, 'prior tests should have left accounts');
-  night.users = night.users.map((u) => ({ ...u, role: 'player' }));
-  night.hostSessions = [];
-  assert.equal((await call('/host/import', {
-    method: 'POST', body: { night }, host: true,
-  })).status, 200);
-
-  const state = await call('/state');
-  assert.equal(state.data.needsHostSetup, true);
-  assert.equal(state.data.setupRequiresHostKey, true);
-
-  assert.equal((await call('/host/setup', {
+test('admins can create another jam session', async () => {
+  const created = await call('/jams', {
     method: 'POST',
-    body: { username: 'claimer', displayName: 'Claim', password: 'secret1' },
-  })).status, 403);
-
-  const claimed = await call('/host/setup', {
-    method: 'POST',
-    body: { username: 'claimer', displayName: 'Claim', password: 'secret1' },
+    body: { name: 'Friday Night' },
     host: true,
   });
-  assert.equal(claimed.status, 200, JSON.stringify(claimed.data));
-  assert.equal(claimed.data.user.role, 'admin');
+  assert.equal(created.status, 200, JSON.stringify(created.data));
+  assert.equal(created.data.jam.name, 'Friday Night');
+  assert.ok(created.data.jam.id);
+
+  const listed = await call('/jams', { host: true });
+  assert.ok(listed.data.jams.some((j) => j.id === created.data.jam.id));
 });
 
-test('night backups omit host credentials and import keeps live sessions', async () => {
+test('night backups omit host sessions and import keeps live sessions', async () => {
   const session = await call('/host/login', {
     method: 'POST',
-    body: { username: 'claimer', password: 'secret1' },
+    body: { username: 'testadmin', password: 'secret1' },
   });
   assert.equal(session.status, 200);
   const exported = await call('/host/export', { host: true });
   assert.equal(exported.status, 200);
   assert.equal(exported.data.night.hostToken, undefined);
   assert.equal(exported.data.night.hostSessions, undefined);
+  assert.ok(Array.isArray(exported.data.night.users));
 
   assert.equal((await call('/host/import', {
     method: 'POST',

@@ -1,9 +1,12 @@
 /* Read-only stage display. Point a TV or a spare laptop at /board. */
 
-import { $, coverageFor, el, pluralize, render, signupsFor, subscribe, upNext, brandWordmark, logoMark } from './common.js';
+import { $, coverageFor, el, pluralize, render, signupsFor, subscribe, upNext, brandWordmark, logoMark, tokens } from './common.js';
 import { qrSvg } from './qr.js';
 
 const app = $('#app');
+
+const _jamFromUrl = new URL(location.href).searchParams.get('jam');
+if (_jamFromUrl) tokens.jam = _jamFromUrl;
 
 /** Rebuild the QR only when the signup URL changes — encoding is not free. */
 let qrCache = { url: '', node: null };
@@ -34,7 +37,9 @@ function board(state) {
   const current = state.current;
   const onDeck = current ? state.songs.find((s) => s.id === current.songId) : null;
   const next = upNext(state);
-  const signupUrl = `${location.origin}/`;
+  const signupUrl = tokens.jam
+    ? `${location.origin}/?jam=${encodeURIComponent(tokens.jam)}`
+    : `${location.origin}/`;
 
   return el('div', { class: 'board' },
     el('div', { class: 'board__brand' },

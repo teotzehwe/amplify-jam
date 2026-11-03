@@ -31,7 +31,8 @@ No install step, no dependencies, no internet. Node 18 or newer.
 Share the sign-up link. The host console's Settings tab shows it as a QR code
 you can print for the stage, and the stage display shows the same code between
 songs. Open `/host` and create an admin account (or sign in with one) — keep
-those credentials to yourself.
+those credentials to yourself. Admins then create jam sessions; musicians
+join a session via a link that includes `?jam=<id>` (or the default jam).
 
 ## Three screens
 
@@ -144,23 +145,23 @@ There are two parallel setups — keep them separate:
    ↔ apex `amplify-jam.vercel.app`.
 2. Testing: Vercel project **`amplify-jam-test`** ↔ GitHub
    `teotzehwe/amplify-jam-test`. Set `KV_PREFIX=amplify-test` so a shared Redis
-   does not overwrite the live night. Use a different `HOST_KEY` from production.
+   does not overwrite the live night. Use a different `KV_PREFIX` / `SUPABASE_JAM_ID`
+   from production.
 3. Add a Redis store — Storage → Marketplace → **Upstash for Redis**
    (`upstash/upstash-kv`), not QStash. Vercel fills in `KV_REST_API_URL` and
    `KV_REST_API_TOKEN`; `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`
    are accepted too. Connect the store to each project that needs it (same
    database is fine if prefixes differ).
-4. Set `HOST_KEY` to a secret of your choosing. Skip this and the host key is
-   generated into Redis with no way for you to learn it — the host console
-   stays locked. Prefer a long random string; change it only when you mean to
-   lock out old host links.
+4. Set `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (and run `supabase/schema.sql`).
+   Accounts are the gate — there is no shared `HOST_KEY`. Create the first admin
+   on `/host`, then create jam sessions from there.
 5. Keep **Deployment Protection / Vercel Authentication off** on the production
    deployment musicians use, or phones will hit a login wall.
 6. Deploy from each repo’s `main`. `vercel.json` must keep the
    `/api/(.*)` → `/api/[...path]` route so host endpoints like `/api/host/auth`
    work. No build step, no dependencies.
-7. Smoke-check `/api/health` (`hasKv` and `hasHostKey` true) and open
-   `/host?k=<HOST_KEY>`.
+7. Smoke-check `/api/health` (`hasKv` and `hasSupabaseUsers` true) and open
+   `/host`.
 
 Canonical public URL: `https://amplify-jam.vercel.app`.
 Testing URL: `https://amplify-jam-test.vercel.app`.
@@ -180,7 +181,7 @@ Two differences worth knowing when it is hosted:
   few milliseconds longer.
 
 A hosted deploy is on the public internet, so anyone with the link can sign up
-and suggest songs. The host key still gates everything under `/api/host/*`.
+and suggest songs. Admin session tokens gate everything under `/api/host/*`.
 
 ## Data and privacy
 
@@ -188,30 +189,31 @@ On a laptop everything lives in `data/jam.json` next to the server — no
 database, no accounts, no third parties. Delete the file and the night is gone.
 Hosted, the same JSON lives in your key-value store under `amplify:state`.
 
-That file holds the host key and each player's session token, so it is
+Night backups hold each player's session token (not admin sessions), so it is
 gitignored; do not commit or share it. The public API never returns either: the
-host key stays server-side, and player tokens are stripped from published state
+admin sessions stay server-side, and player tokens are stripped from published state
 so one phone cannot act as another.
 
-### Optional: store accounts in Supabase
+### Accounts first, then jam sessions
 
-Registered sign-in accounts (username, scrypt hash, role) can dual-write to
-Supabase Postgres so they survive a Redis wipe. Songs, roster, and lineup stay
-in the night blob — only `amplify_accounts` moves.
+Admins and musicians live in an org directory (optionally Supabase). From
+`/host`, an admin creates jam sessions — each session is its own night blob
+(songs, roster, lineup). There is no shared host key.
 
-1. Create a Supabase project (or Marketplace → Supabase on the Vercel project).
-2. Run [`supabase/schema.sql`](supabase/schema.sql) in the SQL editor.
+1. Create a Supabase project (recommended for hosted deploys).
+2. Run [`supabase/schema.sql`](supabase/schema.sql) in the SQL editor
+   (`amplify_accounts` + `amplify_jams`).
 3. Set on the Amplify deploy:
 
 | Variable | Purpose |
 | --- | --- |
 | `SUPABASE_URL` | Project URL (`https://xxxx.supabase.co`) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service-role key (server only — never ship to browsers) |
-| `SUPABASE_JAM_ID` | Optional jam namespace; defaults to `KV_PREFIX` or `amplify` |
+| `SUPABASE_JAM_ID` | Org namespace for accounts/jams; defaults to `KV_PREFIX` or `amplify` |
 
-`/api/health` reports `hasSupabaseUsers: true` when those are set. First boot
-with existing accounts in Redis/file seeds the table automatically. Still no
-npm dependencies — the server speaks PostgREST with `fetch`.
+`/api/health` reports `hasSupabaseUsers: true` when those are set. Redis still
+holds each jam night; accounts dual-write to Supabase. Still no npm deps —
+PostgREST over `fetch`.
 
 Amplify has no transport security of its own. Run it on the venue's local
 network, not the open internet.
@@ -225,10 +227,9 @@ Useful environment variables:
 | `KV_REST_API_URL` | — | Redis REST endpoint. Set it and the file store is not used |
 | `KV_REST_API_TOKEN` | — | Token for that endpoint |
 | `KV_PREFIX` | `amplify` | Key prefix, so two jams can share one store |
-| `HOST_KEY` | — | Fixes the host key instead of generating one. Hosted deploys never print theirs, so set this to a secret you choose |
-| `SUPABASE_URL` | — | When set with a service-role key, accounts dual-write to Supabase |
-| `SUPABASE_SERVICE_ROLE_KEY` | — | Service-role key for `amplify_accounts` |
-| `SUPABASE_JAM_ID` | `KV_PREFIX` / `amplify` | Separates prod/test rows in one project |
+| `SUPABASE_URL` | — | When set with a service-role key, accounts + jam catalog dual-write to Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | — | Service-role key for `amplify_accounts` / `amplify_jams` |
+| `SUPABASE_JAM_ID` | `KV_PREFIX` / `amplify` | Org namespace (not a single night) |
 
 ## Tests
 
@@ -251,8 +252,10 @@ api/[...path].js     the same app as a serverless function
 src/app.js           routing, validation, the REST API
 src/signups.js       who signed up and who may be picked — pure, no I/O
 src/store.js         file and key-value backends, per-request isolation
+src/directory.js       org accounts, admin sessions, jam catalog
 src/supabase-users.js  optional Supabase dual-write for registered accounts
-supabase/schema.sql  table + RLS for amplify_accounts
+src/supabase-jams.js   optional Supabase dual-write for jam session list
+supabase/schema.sql  tables + RLS for amplify_accounts and amplify_jams
 public/js/qr.js      QR encoder, so the sign-up code works with the wifi down
 public/              the three screens; no build step, no framework
 DESIGN.md            tokens, component rules, the a11y sweep, QA checklist

@@ -1,23 +1,18 @@
 /**
- * Persistence, with two interchangeable backends.
+ * Persistence for one jam *night* (songs, roster, lineup).
  *
- *   file — one JSON file next to the server. A jam survives a laptop lid
- *          closing, and there is nothing to install.
- *   kv   — a hosted Redis over its REST API, for serverless hosts like Vercel
- *          where there is no disk and every request may hit a fresh instance.
+ * Accounts and host sessions live in `directory.js`, not here. Each jam id
+ * gets its own Redis keys / file so admins can run many sessions from one
+ * deploy without a shared HOST_KEY.
  *
- * Handlers stay synchronous. A request loads the night, mutates it in memory,
- * and writes it back; on a serverless host that write is a compare-and-set, so
- * two people tapping "sign up" at the same moment cannot silently clobber each
- * other — the loser simply replays against the newer state.
+ *   file — data/jams/{id}.json (local)
+ *   kv   — {prefix}:jam:{id}:state (+ version) on Redis
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-
-import { openSupabaseUsers, UsersSyncedBackend } from './supabase-users.js';
 
 export const DEFAULT_INSTRUMENTS = [
   'Vocals', 'Guitar', 'Bass', 'Drums', 'Keys', 'Sax', 'Trumpet',
@@ -28,15 +23,12 @@ export function newId(prefix = '') {
   return prefix + randomBytes(8).toString('hex');
 }
 
-function defaultState(hostKey) {
+function defaultState(name = 'Amplify Open Jam') {
   return {
     jam: {
-      name: 'Amplify Open Jam',
+      name,
       createdAt: Date.now(),
       allowSuggestions: true,
-      // Requests wait for the host before anyone can sign up for them. On by
-      // default: a song reaching the room unvetted is hard to walk back once
-      // people have started putting their names against it.
       requireApproval: true,
       slots: [
         { instrument: 'Vocals', count: 1 },
@@ -46,17 +38,6 @@ function defaultState(hostKey) {
         { instrument: 'Keys', count: 1 },
       ],
     },
-    hostToken: hostKey || newId(),
-    // Per-admin console sessions issued by /host/login and /host/setup. The
-    // shared hostToken still works (env HOST_KEY / legacy links); sessions let
-    // us revoke one admin without rotating the env key.
-    hostSessions: [],
-    // Registered accounts (username + password) the host manages. Separate from
-    // tonight's roster: a user signs in to claim or resume a player seat.
-    users: [],
-    // Ids removed via /host/users — kept so a lagging Supabase row cannot
-    // reappear through the dual-write merge after a failed remote delete.
-    deletedUserIds: [],
     players: [],
     songs: [],
     rounds: [],
@@ -68,15 +49,21 @@ function defaultState(hostKey) {
 /** Settings that belonged to the retired auto-scheduler. Dropped on load. */
 const RETIRED_SETTINGS = ['restSongs', 'maxConsecutive', 'maybeCountsAsAvailable'];
 
-/** Fill in anything a hand-edited or older state file is missing. */
-export function migrate(state, hostKey) {
-  const base = defaultState(hostKey);
+/**
+ * Fill in anything a hand-edited or older state file is missing.
+ * Account fields from legacy single-blob nights are ignored here — the
+ * directory lifts them once at boot.
+ */
+export function migrate(state, jamName) {
+  const base = defaultState(jamName);
   const out = { ...base, ...state, jam: { ...base.jam, ...(state.jam || {}) } };
-  // A host key given by the environment outranks the stored one. On a hosted
-  // deploy the generated key is printed to a log nobody reads and stripped from
-  // every response, so setting it is the only way to know what it is.
-  out.hostToken = hostKey || state.hostToken || base.hostToken;
   for (const dead of RETIRED_SETTINGS) delete out.jam[dead];
+
+  // Strip account / host-key leftovers so night blobs stay night-only.
+  delete out.hostToken;
+  delete out.hostSessions;
+  delete out.users;
+  delete out.deletedUserIds;
 
   out.players = (state.players || []).map((p) => ({
     limits: {},
@@ -91,32 +78,6 @@ export function migrate(state, hostKey) {
     stats: { plays: 0, lastRound: null, streak: 0, byInstrument: {}, ...(p.stats || {}) },
   }));
 
-  out.users = (state.users || []).map((u) => ({
-    id: u.id,
-    username: String(u.username || '').trim(),
-    displayName: String(u.displayName || u.username || '').trim(),
-    passwordHash: u.passwordHash || '',
-    passwordSalt: u.passwordSalt || '',
-    instruments: Array.isArray(u.instruments) ? u.instruments : [],
-    role: u.role === 'admin' ? 'admin' : 'player',
-    disabled: Boolean(u.disabled),
-    createdAt: u.createdAt || Date.now(),
-  })).filter((u) => u.id && u.username && u.passwordHash && u.passwordSalt);
-
-  out.hostSessions = (state.hostSessions || []).map((s) => ({
-    id: s.id,
-    userId: s.userId,
-    token: s.token,
-    createdAt: s.createdAt || Date.now(),
-  })).filter((s) => s.id && s.userId && s.token);
-
-  out.deletedUserIds = [...new Set(
-    (state.deletedUserIds || []).map((id) => String(id || '').trim()).filter(Boolean),
-  )].slice(0, 500);
-
-  // A song from before approval existed was already visible to the whole room,
-  // so it is approved. Hiding songs people had signed up for would be a worse
-  // surprise than letting a handful through ungated once.
   out.songs = (state.songs || []).map((s) => ({
     key: '',
     notes: '',
@@ -129,11 +90,6 @@ export function migrate(state, hostKey) {
   return out;
 }
 
-/**
- * The lineup on deck. Older states held one chair per template slot, filled in
- * by the scheduler; a lineup is now just the people the host picked, so the
- * seated names carry over and the empty chairs simply cease to exist.
- */
 function migrateLineup(current) {
   if (!current || typeof current !== 'object') return null;
   if (Array.isArray(current.picks)) return current;
@@ -146,24 +102,18 @@ function migrateLineup(current) {
 /* ------------------------------------------------------------ file backend */
 
 class FileBackend {
-  constructor(file, hostKey = '') {
+  constructor(file, jamName = 'Amplify Open Jam') {
     this.file = file;
+    this.jamName = jamName;
     this.version = 0;
     try {
       mkdirSync(dirname(file), { recursive: true });
-      // A single long-lived process owns the file, so it is read once and the
-      // in-memory copy is authoritative from then on.
       this.state = existsSync(file)
-        ? migrate(JSON.parse(readFileSync(file, 'utf8')), hostKey)
-        : defaultState(hostKey);
+        ? migrate(JSON.parse(readFileSync(file, 'utf8')), jamName)
+        : defaultState(jamName);
     } catch (err) {
-      // Nowhere to write — a serverless host with no key-value store set up.
-      // Construct anyway: this backend reports 'sse', which is the signal the
-      // serverless entry point turns into a 503 explaining what to configure.
-      // Throwing here instead would kill the function on import, before it
-      // could say anything at all.
       if (!['ENOENT', 'EROFS', 'EACCES', 'EPERM'].includes(err.code)) throw err;
-      this.state = defaultState(hostKey);
+      this.state = defaultState(jamName);
     }
   }
 
@@ -196,7 +146,6 @@ class FileBackend {
     return 'sse';
   }
 
-  /** File store is local to the process — nothing remote to probe. */
   async ping() {
     return true;
   }
@@ -214,15 +163,18 @@ end
 return 0`;
 
 class KvBackend {
-  constructor(url, token, prefix = 'amplify', hostKey = '') {
+  constructor(url, token, prefix, jamId, jamName = 'Amplify Open Jam') {
     this.url = url.replace(/\/$/, '');
     this.token = token;
-    this.hostKey = hostKey;
-    this.stateKey = `${prefix}:state`;
-    this.versionKey = `${prefix}:version`;
+    this.jamName = jamName;
+    this.stateKey = `${prefix}:jam:${jamId}:state`;
+    this.versionKey = `${prefix}:jam:${jamId}:version`;
+    // Legacy single-blob keys — read once to migrate an old night into this jam.
+    this.legacyStateKey = `${prefix}:state`;
+    this.legacyVersionKey = `${prefix}:version`;
+    this.migratedLegacy = false;
   }
 
-  /** Upstash-compatible REST: POST a command array, get back { result }. */
   async command(...args) {
     const res = await fetch(this.url, {
       method: 'POST',
@@ -236,18 +188,25 @@ class KvBackend {
     return body.result;
   }
 
-  /**
-   * Both keys in one command, deliberately.
-   *
-   * Fetching them separately is not atomic: a writer landing between the two
-   * reads hands you an old state carrying a new version number, and the
-   * compare-and-set then happily overwrites the newer write. One MGET closes
-   * that window — and costs one round trip instead of two.
-   */
   async load() {
     const [raw, version] = await this.command('MGET', this.stateKey, this.versionKey);
-    if (!raw) return { state: defaultState(this.hostKey), version: 0 };
-    return { state: migrate(JSON.parse(raw), this.hostKey), version: Number(version) || 0 };
+    if (raw) {
+      return { state: migrate(JSON.parse(raw), this.jamName), version: Number(version) || 0 };
+    }
+
+    // First open of this jam id: copy legacy `{prefix}:state` if present.
+    if (!this.migratedLegacy) {
+      this.migratedLegacy = true;
+      const [legacyRaw, legacyVer] = await this.command(
+        'MGET', this.legacyStateKey, this.legacyVersionKey,
+      );
+      if (legacyRaw) {
+        const state = migrate(JSON.parse(legacyRaw), this.jamName);
+        return { state, version: Number(legacyVer) || 0 };
+      }
+    }
+
+    return { state: defaultState(this.jamName), version: 0 };
   }
 
   async save(state, expectedVersion) {
@@ -260,10 +219,9 @@ class KvBackend {
   }
 
   get realtime() {
-    return 'poll'; // serverless functions cannot hold an event stream open
+    return 'poll';
   }
 
-  /** Cheap liveness check so /api/health can tell Redis is answering. */
   async ping() {
     const pong = await this.command('PING');
     return pong === 'PONG' || pong === true || pong === 'pong';
@@ -278,13 +236,7 @@ export class Store {
   constructor(backend) {
     this.backend = backend;
     this.listeners = new Set();
-    // Last version known to have been committed. Readable outside a request,
-    // which the event stream needs — it has no request context of its own.
     this.liveVersion = 0;
-    // Each request gets its own view of the night. Without this the loaded
-    // state would live on the shared instance, and two requests in flight at
-    // once would overwrite each other's snapshot between load and save —
-    // accepting both sign-ups and persisting only one.
     this.context = new AsyncLocalStorage();
   }
 
@@ -292,7 +244,6 @@ export class Store {
     return this.backend.realtime;
   }
 
-  /** Probe the backing store (Redis PING, or always-true for the file store). */
   ping() {
     return this.backend.ping();
   }
@@ -311,7 +262,6 @@ export class Store {
     return this.current().version;
   }
 
-  /** Mutate. Stays synchronous so route handlers read like plain code. */
   update(fn) {
     const ctx = this.current();
     const result = fn(ctx.state);
@@ -319,13 +269,6 @@ export class Store {
     return result;
   }
 
-  /**
-   * Load the night, run `fn` against it, and write back any change.
-   *
-   * If somebody else wrote first the save is refused and `fn` is replayed
-   * against the newer state — nothing it did has been shown to anyone yet, so
-   * replaying is safe. Errors thrown by `fn` propagate untouched.
-   */
   async run(fn) {
     for (let attempt = 0; attempt < 8; attempt++) {
       const { state, version } = await this.backend.load();
@@ -341,8 +284,6 @@ export class Store {
         return result;
       }
 
-      // Lost the race. Back off with jitter before replaying — when a whole
-      // room taps "sign up" at once, retrying in lockstep just collides again.
       await sleep(Math.min(250, 8 * 2 ** attempt) * (0.5 + Math.random()));
     }
 
@@ -351,7 +292,6 @@ export class Store {
     throw busy;
   }
 
-  /** Mark the loaded night as needing a write even if nothing changed. */
   touch() {
     this.current().dirty = true;
   }
@@ -361,85 +301,84 @@ export class Store {
     return () => this.listeners.delete(listener);
   }
 
-  /**
-   * What a browser is allowed to see. The host token never leaves the server;
-   * player tokens are stripped so one phone cannot impersonate another.
-   */
   publicState() {
-    // lastHostExportAt is a server-side gate for clearing the night — not for phones.
-    // users / hostSessions / deletedUserIds stay server-side.
-    const { hostToken, lastHostExportAt, users, hostSessions, deletedUserIds, ...rest } = this.state;
-    const active = Array.isArray(users) ? users.filter((u) => !u.disabled) : [];
-    const needsHostSetup = !active.some((u) => u.role === 'admin');
+    const { lastHostExportAt, ...rest } = this.state;
     return {
       ...rest,
       version: this.version,
-      players: rest.players.filter((p) => !p.removed).map(({ token, ...p }) => p),
-      // Phones only need to know accounts exist so the sign-in form can show.
-      hasUsers: active.length > 0,
-      // Host console shows first-admin setup until someone can sign in there.
-      needsHostSetup,
-      // Upgraded nights / env-locked deploys need the existing host key to claim setup.
-      setupRequiresHostKey: needsHostSetup && (
-        (Array.isArray(users) && users.length > 0) || Boolean(process.env.HOST_KEY)
-      ),
+      players: (rest.players || []).filter((p) => !p.removed).map(({ token, ...p }) => p),
     };
-  }
-
-  isHost(token) {
-    if (!token) return false;
-    if (token === this.state.hostToken) return true;
-    return (this.state.hostSessions || []).some((s) => s.token === token);
   }
 
   playerByToken(token) {
     if (!token) return null;
     return this.state.players.find((p) => p.token === token && !p.removed) || null;
   }
-
-  userByUsername(username) {
-    const key = String(username || '').trim().toLowerCase();
-    if (!key) return null;
-    return (this.state.users || []).find((u) => u.username.toLowerCase() === key) || null;
-  }
-
-  userById(id) {
-    return (this.state.users || []).find((u) => u.id === id) || null;
-  }
-
-  adminUsers() {
-    return (this.state.users || []).filter((u) => u.role === 'admin' && !u.disabled);
-  }
-
-  hasAdmins() {
-    return this.adminUsers().length > 0;
-  }
 }
 
 /**
- * Pick a backend from the environment: a hosted key-value store when one is
- * configured, otherwise a local file. Vercel's Redis integration and Upstash
- * use different variable names for the same pair, so both are accepted.
- *
- * When SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are set, registered accounts
- * are dual-written to a Supabase table (see supabase/schema.sql) so they
- * survive a Redis wipe. Songs and tonight's roster stay in the night blob.
+ * Peek a legacy single-blob night (pre multi-jam) without opening a Store.
+ * Used once to lift accounts into the directory.
  */
-export function openStore({ dataDir, env = process.env } = {}) {
+export async function loadLegacyNightBlob({ dataDir, env = process.env } = {}) {
   const url = env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL;
   const token = env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN;
-  const hostKey = env.HOST_KEY || '';
+  const prefix = env.KV_PREFIX || 'amplify';
+
+  if (url && token) {
+    const res = await fetch(url.replace(/\/$/, ''), {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(['GET', `${prefix}:state`]),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || body.error || body.result == null) return null;
+    try {
+      return JSON.parse(body.result);
+    } catch {
+      return null;
+    }
+  }
+
+  const dir = dataDir || env.DATA_DIR || join(process.cwd(), 'data');
+  const file = join(dir, 'jam.json');
+  if (!existsSync(file)) return null;
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+const jamStoreCache = new Map();
+
+export function openJamStore(jamId, { dataDir, env = process.env, jamName } = {}) {
+  if (!jamId) throw new Error('jam id required');
+  const cacheKey = `${env.KV_PREFIX || 'amplify'}:${jamId}`;
+  if (jamStoreCache.has(cacheKey)) return jamStoreCache.get(cacheKey);
+
+  const url = env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL;
+  const token = env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN;
+  const prefix = env.KV_PREFIX || 'amplify';
+  const name = jamName || 'Amplify Open Jam';
 
   let backend;
   if (url && token) {
-    backend = new KvBackend(url, token, env.KV_PREFIX || 'amplify', hostKey);
+    backend = new KvBackend(url, token, prefix, jamId, name);
   } else {
     const dir = dataDir || env.DATA_DIR || join(process.cwd(), 'data');
-    backend = new FileBackend(join(dir, 'jam.json'), hostKey);
+    backend = new FileBackend(join(dir, 'jams', `${jamId}.json`), name);
   }
 
-  const remoteUsers = openSupabaseUsers(env);
-  if (remoteUsers) backend = new UsersSyncedBackend(backend, remoteUsers);
+  const store = new Store(backend);
+  jamStoreCache.set(cacheKey, store);
+  return store;
+}
 
-  return new Store(backend);
+/**
+ * @deprecated Prefer openJamStore + openDirectory. Kept for a few tests that
+ * still open a single night file without a jam id.
+ */
+export function openStore(opts = {}) {
+  return openJamStore('default', opts);
 }
