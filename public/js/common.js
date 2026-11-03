@@ -45,21 +45,45 @@ const KEYS = {
   jam: 'amplify.jamId',
 };
 
+// Per-tab memory when sessionStorage is blocked (private mode / policy).
+const tabMemory = { jam: '', player: '', playerId: '' };
+
+function sessionGet(key) {
+  try { return sessionStorage.getItem(key); } catch { return null; }
+}
+
+function sessionSet(key, value) {
+  try {
+    if (value) sessionStorage.setItem(key, value);
+    else sessionStorage.removeItem(key);
+  } catch { /* keep tabMemory as source of truth */ }
+}
+
 export const tokens = {
   get host() { return localStorage.getItem(KEYS.host) || ''; },
   set host(v) { v ? localStorage.setItem(KEYS.host, v) : localStorage.removeItem(KEYS.host); },
-  get player() { return localStorage.getItem(KEYS.player) || ''; },
-  set player(v) { v ? localStorage.setItem(KEYS.player, v) : localStorage.removeItem(KEYS.player); },
-  get playerId() { return localStorage.getItem(KEYS.playerId) || ''; },
-  set playerId(v) { v ? localStorage.setItem(KEYS.playerId, v) : localStorage.removeItem(KEYS.playerId); },
-  // Per-tab so a host picking jam B in another tab cannot redirect this
-  // tab's mutations while its event stream stays on jam A.
+  // Player credentials are tab-scoped with the jam so joining jam B in
+  // another tab cannot overwrite this tab's token while it still targets A.
+  get player() { return tabMemory.player || sessionGet(KEYS.player) || ''; },
+  set player(v) {
+    tabMemory.player = v || '';
+    sessionSet(KEYS.player, v);
+  },
+  get playerId() { return tabMemory.playerId || sessionGet(KEYS.playerId) || ''; },
+  set playerId(v) {
+    tabMemory.playerId = v || '';
+    sessionSet(KEYS.playerId, v);
+  },
   get jam() {
-    return sessionStorage.getItem(KEYS.jam)
+    return tabMemory.jam
+      || sessionGet(KEYS.jam)
       || new URL(location.href).searchParams.get('jam')
       || '';
   },
-  set jam(v) { v ? sessionStorage.setItem(KEYS.jam, v) : sessionStorage.removeItem(KEYS.jam); },
+  set jam(v) {
+    tabMemory.jam = v || '';
+    sessionSet(KEYS.jam, v);
+  },
 };
 
 /* --------------------------------------------------------------------- api */

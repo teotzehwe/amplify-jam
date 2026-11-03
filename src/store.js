@@ -124,14 +124,16 @@ class FileBackend {
     this.file = file;
     this.jamName = jamName;
     this.version = 0;
+    let readingExisting = false;
     let readingLegacy = false;
     try {
       mkdirSync(dirname(file), { recursive: true });
       if (existsSync(file)) {
+        // Propagate read/parse failures — never cache defaults over a real file.
+        readingExisting = true;
         this.state = migrate(JSON.parse(readFileSync(file, 'utf8')), jamName);
       } else if (adoptLegacy && legacyFile && existsSync(legacyFile)) {
         // Lifted jam only: adopt the pre-multi-jam night file once.
-        // Propagate read/parse failures — never cache defaults over a real blob.
         readingLegacy = true;
         this.state = migrate(
           parseLegacyNightJson(readFileSync(legacyFile, 'utf8')),
@@ -141,7 +143,13 @@ class FileBackend {
         this.state = defaultState(jamName);
       }
     } catch (err) {
-      if (readingLegacy || !['ENOENT', 'EROFS', 'EACCES', 'EPERM'].includes(err.code)) throw err;
+      if (
+        readingExisting
+        || readingLegacy
+        || !['ENOENT', 'EROFS', 'EACCES', 'EPERM'].includes(err.code)
+      ) {
+        throw err;
+      }
       this.state = defaultState(jamName);
     }
   }
