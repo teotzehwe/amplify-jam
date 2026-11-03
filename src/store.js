@@ -200,10 +200,11 @@ class KvBackend {
       return { state: migrate(JSON.parse(raw), this.jamName), version: Number(version) || 0 };
     }
 
-    // Lifted jam only: copy legacy `{prefix}:state` once. Version is 0 so the
-    // first per-jam CAS save succeeds (the per-jam version key does not exist).
+    // Lifted jam only: keep returning the legacy blob until a CAS save writes
+    // the per-jam key. Version is 0 so that first save succeeds. Do not mark
+    // migrated until the legacy key is confirmed empty (a failed MGET must
+    // leave the flag unset so the next load retries).
     if (this.adoptLegacy && !this.migratedLegacy) {
-      this.migratedLegacy = true;
       const [legacyRaw] = await this.command(
         'MGET', this.legacyStateKey, this.legacyVersionKey,
       );
@@ -211,6 +212,7 @@ class KvBackend {
         const state = migrate(JSON.parse(legacyRaw), this.jamName);
         return { state, version: 0 };
       }
+      this.migratedLegacy = true;
     }
 
     return { state: defaultState(this.jamName), version: 0 };
