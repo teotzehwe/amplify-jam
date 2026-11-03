@@ -47,6 +47,8 @@ const KEYS = {
 
 // Per-tab memory when sessionStorage is blocked (private mode / policy).
 const tabMemory = { jam: '', player: '', playerId: '' };
+/** In-memory player credentials keyed by jam id (same tab, multiple jams). */
+const tabPlayers = Object.create(null);
 
 /** Jam id that adopted the pre-multi-jam night — from /api/state meta. */
 let knownLegacyJamId = null;
@@ -70,12 +72,34 @@ function localRemove(key) {
   try { localStorage.removeItem(key); } catch { /* ignore */ }
 }
 
+function playerStoreKey(kind, jamId) {
+  return `${KEYS[kind]}:${jamId}`;
+}
+
+function readPlayerCred(kind, jamId) {
+  if (!jamId) return tabMemory[kind] || '';
+  const mem = tabPlayers[jamId];
+  if (mem?.[kind]) return mem[kind];
+  return sessionGet(playerStoreKey(kind, jamId)) || '';
+}
+
+function writePlayerCred(kind, jamId, value) {
+  const next = value || '';
+  if (!jamId) {
+    tabMemory[kind] = next;
+    return;
+  }
+  if (!tabPlayers[jamId]) tabPlayers[jamId] = { player: '', playerId: '' };
+  tabPlayers[jamId][kind] = next;
+  sessionSet(playerStoreKey(kind, jamId), next);
+}
+
 /**
  * Pre-multi-jam localStorage player token — only sent when this tab targets
  * the legacy jam. Never copied into tab storage until /api/state returns youId.
  */
 function legacyPlayerForRequest() {
-  if (tabMemory.player || sessionGet(KEYS.player)) return '';
+  if (tokens.player) return '';
   const legacy = localGet(KEYS.player);
   if (!legacy || !knownLegacyJamId) return '';
   if (tokens.jam !== knownLegacyJamId) return '';
@@ -88,12 +112,10 @@ function adoptLegacyPlayerIfMatched(state) {
   const legacyTok = localGet(KEYS.player);
   if (!legacyTok) return;
   if (tokens.player && tokens.player !== legacyTok) return;
+  if (!tokens.jam) tokens.jam = state.jamId;
   if (!tokens.player) {
-    tabMemory.player = legacyTok;
-    sessionSet(KEYS.player, legacyTok);
-    const legacyId = localGet(KEYS.playerId) || state.youId;
-    tabMemory.playerId = legacyId;
-    sessionSet(KEYS.playerId, legacyId);
+    tokens.player = legacyTok;
+    tokens.playerId = localGet(KEYS.playerId) || state.youId;
   }
   localRemove(KEYS.player);
   localRemove(KEYS.playerId);
@@ -102,18 +124,11 @@ function adoptLegacyPlayerIfMatched(state) {
 export const tokens = {
   get host() { return localStorage.getItem(KEYS.host) || ''; },
   set host(v) { v ? localStorage.setItem(KEYS.host, v) : localStorage.removeItem(KEYS.host); },
-  // Player credentials are tab-scoped with the jam so joining jam B in
-  // another tab cannot overwrite this tab's token while it still targets A.
-  get player() { return tabMemory.player || sessionGet(KEYS.player) || ''; },
-  set player(v) {
-    tabMemory.player = v || '';
-    sessionSet(KEYS.player, v);
-  },
-  get playerId() { return tabMemory.playerId || sessionGet(KEYS.playerId) || ''; },
-  set playerId(v) {
-    tabMemory.playerId = v || '';
-    sessionSet(KEYS.playerId, v);
-  },
+  // Credentials are keyed by jam so joining B then returning to A restores A.
+  get player() { return readPlayerCred('player', tokens.jam); },
+  set player(v) { writePlayerCred('player', tokens.jam, v); },
+  get playerId() { return readPlayerCred('playerId', tokens.jam); },
+  set playerId(v) { writePlayerCred('playerId', tokens.jam, v); },
   get jam() {
     return tabMemory.jam
       || sessionGet(KEYS.jam)
@@ -121,7 +136,19 @@ export const tokens = {
       || '';
   },
   set jam(v) {
-    tabMemory.jam = v || '';
+    const next = v || '';
+    // Bind any unscoped join credentials to the jam once it is known.
+    if (next && (tabMemory.player || tabMemory.playerId)) {
+      if (tabMemory.player && !readPlayerCred('player', next)) {
+        writePlayerCred('player', next, tabMemory.player);
+      }
+      if (tabMemory.playerId && !readPlayerCred('playerId', next)) {
+        writePlayerCred('playerId', next, tabMemory.playerId);
+      }
+      tabMemory.player = '';
+      tabMemory.playerId = '';
+    }
+    tabMemory.jam = next;
     sessionSet(KEYS.jam, v);
   },
 };

@@ -179,8 +179,9 @@ class DirectorySyncedBackend {
     this.inner = inner;
     this.remoteUsers = remoteUsers;
     this.remoteJams = remoteJams;
-    // States whose remote jam list could not be read — skip replaceAll on save
-    // so a transient Supabase error cannot wipe the catalog.
+    // States whose remote users/jams list could not be read — skip replaceAll
+    // on save so a transient Supabase error cannot wipe remote rows.
+    this.untrustedUsers = new WeakSet();
     this.untrustedJams = new WeakSet();
   }
 
@@ -213,10 +214,13 @@ class DirectorySyncedBackend {
         e.status = 503;
         throw e;
       }
-      // We never reached a successful jam list read on this load.
+      // Keep local users, but do not mirror them until a later load succeeds.
+      this.untrustedUsers.add(state);
       if (this.remoteJams) this.untrustedJams.add(state);
       return { state, version };
     }
+
+    this.untrustedUsers.delete(state);
 
     const localUsers = Array.isArray(state.users) ? state.users : [];
     const deletedIds = Array.isArray(state.deletedUserIds) ? state.deletedUserIds : [];
@@ -259,7 +263,7 @@ class DirectorySyncedBackend {
   async save(state, expectedVersion) {
     const ok = await this.inner.save(state, expectedVersion);
     if (!ok) return false;
-    if (this.remoteUsers) {
+    if (this.remoteUsers && !this.untrustedUsers.has(state)) {
       for (let i = 0; i < 3; i++) {
         try {
           await this.remoteUsers.replaceAll(state.users || []);
