@@ -82,18 +82,25 @@ function isDirectoryOnly(path) {
   return false;
 }
 
+/**
+ * Lift a pre-multi-jam night into the directory when needed.
+ * @returns {Promise<boolean>} true when a directory update was applied and the
+ *   caller must wait for `directory.run` to CAS-save before marking the lift done.
+ */
 async function ensureLegacyLifted() {
-  if (legacyLiftDone) return;
-  // Only mark done after a successful read. A Redis failure must leave the
-  // flag unset so the next request retries the lift.
+  if (legacyLiftDone) return false;
+  // A Redis failure throws — leave the flag unset so the next request retries.
   const legacy = await loadLegacyNightBlob();
-  legacyLiftDone = true;
-  if (!legacy) return;
-  const hasAccounts = Array.isArray(legacy.users) && legacy.users.length > 0;
+  if (!legacy) {
+    legacyLiftDone = true;
+    return false;
+  }
   const emptyDir = (directory.state.users || []).length === 0
     && (directory.state.jams || []).length === 0;
-  if (!emptyDir && !hasAccounts) return;
-  if (!emptyDir) return;
+  if (!emptyDir) {
+    legacyLiftDone = true;
+    return false;
+  }
   directory.update((state) => {
     const lifted = liftLegacyNight(state, legacy);
     state.users = lifted.users;
@@ -101,6 +108,8 @@ async function ensureLegacyLifted() {
     state.deletedUserIds = lifted.deletedUserIds;
     state.jams = lifted.jams;
   });
+  // Do not set legacyLiftDone yet — Directory.run may still fail the CAS save.
+  return true;
 }
 
 function resolveJamId(ctx) {
@@ -1386,8 +1395,9 @@ export async function handleRequest(req, res) {
     };
 
     try {
+      let didLegacyLift = false;
       const result = await directory.run(async () => {
-        await ensureLegacyLifted();
+        didLegacyLift = await ensureLegacyLifted();
 
         if (path === '/api/events') {
           const jamId = resolveJamId(ctx);
@@ -1428,6 +1438,8 @@ export async function handleRequest(req, res) {
         return jamContext.run(jamStore,
           () => jamStore.run(() => match.handler(ctx) ?? { ok: true }));
       });
+      // Directory CAS save succeeded — safe to stop retrying the legacy lift.
+      if (didLegacyLift) legacyLiftDone = true;
 
       if (result?.__streamed) return undefined;
       if (result && Buffer.isBuffer(result.__pdf)) {

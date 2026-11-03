@@ -224,8 +224,13 @@ class DirectorySyncedBackend {
         const remoteJams = await this.remoteJams.list();
         if (remoteJams.length > 0) {
           state.jams = mergeJams(state.jams, remoteJams);
+          this.untrustedJams.delete(state);
         } else if ((state.jams || []).length > 0) {
+          // Seed remote from local — only clear the marker after seeding works.
           await this.remoteJams.replaceAll(state.jams);
+          this.untrustedJams.delete(state);
+        } else {
+          this.untrustedJams.delete(state);
         }
       } catch {
         // Keep local jams, but do not mirror them until a later load succeeds.
