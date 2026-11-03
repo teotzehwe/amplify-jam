@@ -352,12 +352,16 @@ export class Directory {
     const users = this.state.users || [];
     const active = users.filter((u) => !u.disabled);
     const jams = (this.state.jams || []).filter((j) => !j.archived);
+    const legacy = (this.state.jams || []).find((j) => j.legacyNight && !j.archived);
     return {
       hasUsers: active.length > 0,
       needsHostSetup: !active.some((u) => u.role === 'admin'),
       // Host key is gone — first admin is always open when nobody can sign in.
       setupRequiresHostKey: false,
       jamCount: jams.length,
+      // Lets the client migrate pre-multi-jam localStorage player tokens only
+      // onto the jam that adopted the legacy night blob.
+      legacyJamId: legacy?.id || null,
     };
   }
 

@@ -48,6 +48,9 @@ const KEYS = {
 // Per-tab memory when sessionStorage is blocked (private mode / policy).
 const tabMemory = { jam: '', player: '', playerId: '' };
 
+/** Jam id that adopted the pre-multi-jam night — from /api/state meta. */
+let knownLegacyJamId = null;
+
 function sessionGet(key) {
   try { return sessionStorage.getItem(key); } catch { return null; }
 }
@@ -57,6 +60,43 @@ function sessionSet(key, value) {
     if (value) sessionStorage.setItem(key, value);
     else sessionStorage.removeItem(key);
   } catch { /* keep tabMemory as source of truth */ }
+}
+
+function localGet(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function localRemove(key) {
+  try { localStorage.removeItem(key); } catch { /* ignore */ }
+}
+
+/**
+ * Pre-multi-jam localStorage player token — only sent when this tab targets
+ * the legacy jam. Never copied into tab storage until /api/state returns youId.
+ */
+function legacyPlayerForRequest() {
+  if (tabMemory.player || sessionGet(KEYS.player)) return '';
+  const legacy = localGet(KEYS.player);
+  if (!legacy || !knownLegacyJamId) return '';
+  if (tokens.jam !== knownLegacyJamId) return '';
+  return legacy;
+}
+
+/** After state confirms youId on the legacy jam, move credentials into the tab. */
+function adoptLegacyPlayerIfMatched(state) {
+  if (!state?.youId || !state.legacyJamId || state.jamId !== state.legacyJamId) return;
+  const legacyTok = localGet(KEYS.player);
+  if (!legacyTok) return;
+  if (tokens.player && tokens.player !== legacyTok) return;
+  if (!tokens.player) {
+    tabMemory.player = legacyTok;
+    sessionSet(KEYS.player, legacyTok);
+    const legacyId = localGet(KEYS.playerId) || state.youId;
+    tabMemory.playerId = legacyId;
+    sessionSet(KEYS.playerId, legacyId);
+  }
+  localRemove(KEYS.player);
+  localRemove(KEYS.playerId);
 }
 
 export const tokens = {
@@ -96,7 +136,10 @@ export const tokens = {
  */
 export async function api(path, { method = 'GET', body, as = 'auto' } = {}) {
   const sendHost = as !== 'player' && tokens.host;
-  const sendPlayer = as !== 'host' && tokens.player;
+  const sendPlayer = as !== 'host';
+  const playerToken = sendPlayer
+    ? (tokens.player || legacyPlayerForRequest())
+    : '';
   // Compare-and-set races return 409 after server retries. A short client
   // replay covers the whole-room-taps-at-once case without the musician
   // needing to press again.
@@ -108,7 +151,7 @@ export async function api(path, { method = 'GET', body, as = 'auto' } = {}) {
       headers: {
         ...(body ? { 'content-type': 'application/json' } : {}),
         ...(sendHost ? { 'x-host-token': tokens.host } : {}),
-        ...(sendPlayer ? { 'x-player-token': tokens.player } : {}),
+        ...(playerToken ? { 'x-player-token': playerToken } : {}),
         ...(tokens.jam ? { 'x-jam-id': tokens.jam } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -320,7 +363,24 @@ export function subscribe(onState) {
     }
     pulling = true;
     try {
-      const state = await api('/state');
+      let state = await api('/state');
+      if (state.legacyJamId !== undefined) knownLegacyJamId = state.legacyJamId || null;
+
+      // After learning which jam adopted the legacy night, retry once with the
+      // localStorage credential if this tab is on that jam and still anonymous.
+      if (
+        !tokens.player
+        && localGet(KEYS.player)
+        && state.legacyJamId
+        && state.jamId === state.legacyJamId
+        && !state.youId
+      ) {
+        // Prefer an explicit jam id so the retry cannot retarget to another night.
+        if (!tokens.jam) tokens.jam = state.jamId;
+        state = await api('/state');
+      }
+
+      adoptLegacyPlayerIfMatched(state);
       setConnectionBanner(null);
       connect(state.realtime);
       if (retryTimer) {
@@ -359,12 +419,21 @@ export function subscribe(onState) {
 
   let events = null;
   let poll = null;
+  let connectedJam = null;
 
   /** Wire up live updates once the server has told us what it supports. */
   function connect(mode) {
-    if (poll) return; // already connected
+    const jam = tokens.jam || '';
+    // Reconnect when the selected jam changes (host switcher); otherwise keep
+    // the existing poll/SSE so we do not stack timers.
+    if (poll && connectedJam === jam) return;
+    events?.close();
+    if (poll) clearInterval(poll);
+    events = null;
+    poll = null;
+    connectedJam = jam;
     if (mode === 'sse') {
-      const jamQs = tokens.jam ? `?jam=${encodeURIComponent(tokens.jam)}` : '';
+      const jamQs = jam ? `?jam=${encodeURIComponent(jam)}` : '';
       events = new EventSource(`/api/events${jamQs}`);
       events.onmessage = () => pull();
       events.onerror = () => {}; // EventSource retries on its own

@@ -674,12 +674,21 @@ route('POST', /^\/api\/jams$/, async (ctx) => {
     jam = createJamRecord(state, { name, createdBy: session?.userId || null });
   });
   // Touch the night blob so the jam exists on disk/Redis immediately.
-  const night = nightStoreFor(jam);
-  await night.run(() => {
-    night.update((state) => {
-      state.jam.name = jam.name;
+  // FileDirectoryBackend caches mutable state — roll back the catalog entry
+  // if night init fails so /api/jams cannot list a jam with no night store.
+  try {
+    const night = nightStoreFor(jam);
+    await night.run(() => {
+      night.update((state) => {
+        state.jam.name = jam.name;
+      });
     });
-  });
+  } catch (err) {
+    directory.update((state) => {
+      state.jams = (state.jams || []).filter((entry) => entry.id !== jam.id);
+    });
+    throw err;
+  }
   return { jam: { id: jam.id, name: jam.name, createdAt: jam.createdAt, createdBy: jam.createdBy } };
 });
 
