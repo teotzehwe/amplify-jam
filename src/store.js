@@ -352,17 +352,23 @@ export async function loadLegacyNightBlob({ dataDir, env = process.env } = {}) {
     try {
       return JSON.parse(body.result);
     } catch {
-      return null;
+      const err = new Error('legacy night JSON is invalid');
+      err.status = 503;
+      throw err;
     }
   }
 
   const dir = dataDir || env.DATA_DIR || join(process.cwd(), 'data');
   const file = join(dir, 'jam.json');
   if (!existsSync(file)) return null;
+  // An existing file that cannot be read or parsed is a failed read, not an
+  // absent night — throw so ensureLegacyLifted leaves legacyLiftDone unset.
   try {
     return JSON.parse(readFileSync(file, 'utf8'));
-  } catch {
-    return null;
+  } catch (err) {
+    const e = new Error(`legacy night read failed: ${err.code || err.message}`);
+    e.status = 503;
+    throw e;
   }
 }
 

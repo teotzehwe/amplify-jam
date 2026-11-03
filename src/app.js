@@ -117,14 +117,20 @@ async function ensureLegacyLifted() {
   return true;
 }
 
-function resolveJamId(ctx) {
+/**
+ * @param {{ jamId?: string, method?: string }} ctx
+ * @param {{ allowFallback?: boolean }} [opts] — default jam when id omitted;
+ *   for mutations with an explicit unknown id, callers should reject instead.
+ */
+function resolveJamId(ctx, { allowFallback = true } = {}) {
   const fromHeader = String(ctx.jamId || '').trim();
   const jams = directory.publicJams();
-  // Accept a supplied id only when it names an open jam — stale localStorage
-  // / archived ids fall through to the default jam instead of hard-failing.
-  if (fromHeader && jams.some((jam) => jam.id === fromHeader)) return fromHeader;
-  // Default to the oldest open jam so single-night deploys and tests keep
-  // working without an x-jam-id header. Multi-jam UIs always send the header.
+  if (fromHeader) {
+    if (jams.some((jam) => jam.id === fromHeader)) return fromHeader;
+    // Explicit unknown/archived id: do not silently retarget mutations.
+    if (!allowFallback) return '';
+  }
+  // Omitted id (and GET with a bad id): oldest open jam.
   if (jams.length >= 1) return jams[0].id;
   return '';
 }
@@ -1396,8 +1402,12 @@ export async function handleRequest(req, res) {
       hostToken: req.headers['x-host-token'] || '',
       playerToken: req.headers['x-player-token'] || '',
       jamId: req.headers['x-jam-id'] || url.searchParams.get('jam') || '',
+      method: req.method,
       ip: forwardedIp || req.socket?.remoteAddress || '',
     };
+    // Mutations with an explicit unknown/archived jam id must not fall through
+    // to the default jam (stale tokens.jam would write the wrong night).
+    const jamFallback = req.method === 'GET' || path === '/api/events';
 
     try {
       let didLegacyLift = false;
@@ -1436,7 +1446,7 @@ export async function handleRequest(req, res) {
           return match.handler(ctx) ?? { ok: true };
         }
 
-        const jamId = resolveJamId(ctx);
+        const jamId = resolveJamId(ctx, { allowFallback: jamFallback });
         const jam = jamId ? directory.jamById(jamId) : null;
         if (!jam) throw new HttpError(400, 'Pick a jam session first');
         const jamStore = nightStoreFor(jam);

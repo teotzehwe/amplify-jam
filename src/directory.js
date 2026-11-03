@@ -415,21 +415,31 @@ export class Directory {
  */
 export function liftLegacyNight(directoryState, nightState, { defaultName = 'Amplify Open Jam' } = {}) {
   const dir = migrateDirectory(directoryState);
-  const deleted = new Set(dir.deletedUserIds || []);
-  // Merge legacy accounts by id — keep directory records, skip tombstones.
+  // Union tombstones so a legacy-deleted account cannot reappear after lift.
+  dir.deletedUserIds = [...new Set([
+    ...(dir.deletedUserIds || []),
+    ...(Array.isArray(nightState?.deletedUserIds) ? nightState.deletedUserIds : []),
+  ].map((id) => String(id || '').trim()).filter(Boolean))].slice(0, 500);
+  const deleted = new Set(dir.deletedUserIds);
+  // Merge legacy accounts by id — keep directory records, skip tombstones and
+  // username collisions (usernames are unique; a retained duplicate could
+  // authenticate after the directory account is deleted).
   if (Array.isArray(nightState?.users) && nightState.users.length) {
     const byId = new Map((dir.users || []).map((u) => [u.id, u]));
+    const takenNames = new Set(
+      (dir.users || []).map((u) => String(u.username || '').trim().toLowerCase()).filter(Boolean),
+    );
     for (const u of nightState.users) {
       if (!u?.id || deleted.has(u.id) || byId.has(u.id)) continue;
+      const name = String(u.username || '').trim().toLowerCase();
+      if (name && takenNames.has(name)) continue;
       byId.set(u.id, u);
+      if (name) takenNames.add(name);
     }
     dir.users = [...byId.values()];
   }
-  if ((dir.deletedUserIds || []).length === 0 && Array.isArray(nightState?.deletedUserIds)) {
-    dir.deletedUserIds = nightState.deletedUserIds;
-  }
   // Never import legacy host sessions — tokens may outlive demoted/disabled
-  // admins, and Directory.isHost only checks the token. Require a fresh login.
+  // admins. Require a fresh login; also drop any stale non-admin sessions.
   const adminIds = new Set(
     (dir.users || []).filter((u) => u.role === 'admin' && !u.disabled).map((u) => u.id),
   );
