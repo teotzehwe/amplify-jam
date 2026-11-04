@@ -38,15 +38,119 @@ export function render(container, ...children) {
 
 /* ------------------------------------------------------------------ tokens */
 
-const KEYS = { host: 'amplify.hostKey', player: 'amplify.playerToken', playerId: 'amplify.playerId' };
+const KEYS = {
+  host: 'amplify.hostKey',
+  player: 'amplify.playerToken',
+  playerId: 'amplify.playerId',
+  jam: 'amplify.jamId',
+};
+
+// Per-tab memory when sessionStorage is blocked (private mode / policy).
+const tabMemory = { jam: '', player: '', playerId: '' };
+/** In-memory player credentials keyed by jam id (same tab, multiple jams). */
+const tabPlayers = Object.create(null);
+
+/** Jam id that adopted the pre-multi-jam night — from /api/state meta. */
+let knownLegacyJamId = null;
+
+function sessionGet(key) {
+  try { return sessionStorage.getItem(key); } catch { return null; }
+}
+
+function sessionSet(key, value) {
+  try {
+    if (value) sessionStorage.setItem(key, value);
+    else sessionStorage.removeItem(key);
+  } catch { /* keep tabMemory as source of truth */ }
+}
+
+function localGet(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function localRemove(key) {
+  try { localStorage.removeItem(key); } catch { /* ignore */ }
+}
+
+function playerStoreKey(kind, jamId) {
+  return `${KEYS[kind]}:${jamId}`;
+}
+
+function readPlayerCred(kind, jamId) {
+  if (!jamId) return tabMemory[kind] || '';
+  const mem = tabPlayers[jamId];
+  if (mem?.[kind]) return mem[kind];
+  return sessionGet(playerStoreKey(kind, jamId)) || '';
+}
+
+function writePlayerCred(kind, jamId, value) {
+  const next = value || '';
+  if (!jamId) {
+    tabMemory[kind] = next;
+    return;
+  }
+  if (!tabPlayers[jamId]) tabPlayers[jamId] = { player: '', playerId: '' };
+  tabPlayers[jamId][kind] = next;
+  sessionSet(playerStoreKey(kind, jamId), next);
+}
+
+/**
+ * Pre-multi-jam localStorage player token — only sent when this tab targets
+ * the legacy jam. Never copied into tab storage until /api/state returns youId.
+ */
+function legacyPlayerForRequest() {
+  if (tokens.player) return '';
+  const legacy = localGet(KEYS.player);
+  if (!legacy || !knownLegacyJamId) return '';
+  if (tokens.jam !== knownLegacyJamId) return '';
+  return legacy;
+}
+
+/** After state confirms youId on the legacy jam, move credentials into the tab. */
+function adoptLegacyPlayerIfMatched(state) {
+  if (!state?.youId || !state.legacyJamId || state.jamId !== state.legacyJamId) return;
+  const legacyTok = localGet(KEYS.player);
+  if (!legacyTok) return;
+  if (tokens.player && tokens.player !== legacyTok) return;
+  if (!tokens.jam) tokens.jam = state.jamId;
+  if (!tokens.player) {
+    tokens.player = legacyTok;
+    tokens.playerId = localGet(KEYS.playerId) || state.youId;
+  }
+  localRemove(KEYS.player);
+  localRemove(KEYS.playerId);
+}
 
 export const tokens = {
-  get host() { return localStorage.getItem(KEYS.host) || new URL(location.href).searchParams.get('k') || ''; },
+  get host() { return localStorage.getItem(KEYS.host) || ''; },
   set host(v) { v ? localStorage.setItem(KEYS.host, v) : localStorage.removeItem(KEYS.host); },
-  get player() { return localStorage.getItem(KEYS.player) || ''; },
-  set player(v) { v ? localStorage.setItem(KEYS.player, v) : localStorage.removeItem(KEYS.player); },
-  get playerId() { return localStorage.getItem(KEYS.playerId) || ''; },
-  set playerId(v) { v ? localStorage.setItem(KEYS.playerId, v) : localStorage.removeItem(KEYS.playerId); },
+  // Credentials are keyed by jam so joining B then returning to A restores A.
+  get player() { return readPlayerCred('player', tokens.jam); },
+  set player(v) { writePlayerCred('player', tokens.jam, v); },
+  get playerId() { return readPlayerCred('playerId', tokens.jam); },
+  set playerId(v) { writePlayerCred('playerId', tokens.jam, v); },
+  get jam() {
+    return tabMemory.jam
+      || sessionGet(KEYS.jam)
+      || new URL(location.href).searchParams.get('jam')
+      || '';
+  },
+  set jam(v) {
+    const next = v || '';
+    // Bind any unscoped join credentials to the jam once it is known.
+    if (next && (tabMemory.player || tabMemory.playerId)) {
+      if (tabMemory.player && !readPlayerCred('player', next)) {
+        writePlayerCred('player', next, tabMemory.player);
+      }
+      if (tabMemory.playerId && !readPlayerCred('playerId', next)) {
+        writePlayerCred('playerId', next, tabMemory.playerId);
+      }
+      tabMemory.player = '';
+      tabMemory.playerId = '';
+    }
+    tabMemory.jam = next;
+    sessionSet(KEYS.jam, v);
+  },
 };
 
 /* --------------------------------------------------------------------- api */
@@ -59,7 +163,10 @@ export const tokens = {
  */
 export async function api(path, { method = 'GET', body, as = 'auto' } = {}) {
   const sendHost = as !== 'player' && tokens.host;
-  const sendPlayer = as !== 'host' && tokens.player;
+  const sendPlayer = as !== 'host';
+  const playerToken = sendPlayer
+    ? (tokens.player || legacyPlayerForRequest())
+    : '';
   // Compare-and-set races return 409 after server retries. A short client
   // replay covers the whole-room-taps-at-once case without the musician
   // needing to press again.
@@ -71,7 +178,8 @@ export async function api(path, { method = 'GET', body, as = 'auto' } = {}) {
       headers: {
         ...(body ? { 'content-type': 'application/json' } : {}),
         ...(sendHost ? { 'x-host-token': tokens.host } : {}),
-        ...(sendPlayer ? { 'x-player-token': tokens.player } : {}),
+        ...(playerToken ? { 'x-player-token': playerToken } : {}),
+        ...(tokens.jam ? { 'x-jam-id': tokens.jam } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -282,7 +390,24 @@ export function subscribe(onState) {
     }
     pulling = true;
     try {
-      const state = await api('/state');
+      let state = await api('/state');
+      if (state.legacyJamId !== undefined) knownLegacyJamId = state.legacyJamId || null;
+
+      // After learning which jam adopted the legacy night, retry once with the
+      // localStorage credential if this tab is on that jam and still anonymous.
+      if (
+        !tokens.player
+        && localGet(KEYS.player)
+        && state.legacyJamId
+        && state.jamId === state.legacyJamId
+        && !state.youId
+      ) {
+        // Prefer an explicit jam id so the retry cannot retarget to another night.
+        if (!tokens.jam) tokens.jam = state.jamId;
+        state = await api('/state');
+      }
+
+      adoptLegacyPlayerIfMatched(state);
       setConnectionBanner(null);
       connect(state.realtime);
       if (retryTimer) {
@@ -296,7 +421,7 @@ export function subscribe(onState) {
     } catch (err) {
       console.warn('state refresh failed', err);
       const msg = err.status === 503
-        ? (err.message || 'The jam server is not ready (usually Redis / HOST_KEY).')
+        ? (err.message || 'The jam server is not ready (usually Redis).')
         : last < 0
           ? 'Cannot reach the jam server. Retrying…'
           : 'Connection lost — showing the last update. Retrying…';
@@ -321,12 +446,22 @@ export function subscribe(onState) {
 
   let events = null;
   let poll = null;
+  let connectedJam = null;
 
   /** Wire up live updates once the server has told us what it supports. */
   function connect(mode) {
-    if (poll) return; // already connected
+    const jam = tokens.jam || '';
+    // Reconnect when the selected jam changes (host switcher); otherwise keep
+    // the existing poll/SSE so we do not stack timers.
+    if (poll && connectedJam === jam) return;
+    events?.close();
+    if (poll) clearInterval(poll);
+    events = null;
+    poll = null;
+    connectedJam = jam;
     if (mode === 'sse') {
-      events = new EventSource('/api/events');
+      const jamQs = jam ? `?jam=${encodeURIComponent(jam)}` : '';
+      events = new EventSource(`/api/events${jamQs}`);
       events.onmessage = () => pull();
       events.onerror = () => {}; // EventSource retries on its own
       poll = setInterval(pull, 10000); // backstop if the stream dies quietly

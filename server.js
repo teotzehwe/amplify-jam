@@ -7,7 +7,7 @@
 import { createServer } from 'node:http';
 import { networkInterfaces } from 'node:os';
 
-import { handleRequest, store } from './src/app.js';
+import { handleRequest, directory } from './src/app.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -24,18 +24,16 @@ function lanAddress() {
 const server = createServer(handleRequest);
 
 server.listen(PORT, async () => {
-  const { key, name, needsSetup } = await store.run(() => {
-    // Nothing stored yet: persist now so the night survives a restart.
-    if (store.version === 0) store.touch();
+  const { needsSetup, jamCount } = await directory.run(() => {
+    if (directory.version === 0) directory.touch();
     return {
-      key: store.state.hostToken,
-      name: store.state.jam.name,
-      needsSetup: !store.hasAdmins(),
+      needsSetup: !directory.hasAdmins(),
+      jamCount: directory.publicJams().length,
     };
   });
   const host = lanAddress();
   console.log(`
-  \u266a  Amplify \u2014 ${name}
+  \u266a  Amplify
 
      Players sign up   http://${host}:${PORT}/
      Host console      http://${host}:${PORT}/host
@@ -43,8 +41,8 @@ server.listen(PORT, async () => {
 
      ${needsSetup
     ? 'Open the host console and create the first admin account.'
-    : 'Admins sign in on /host with their username and password.'}
-     Share the sign-up link with the room; keep the host console to yourself.
-     Host key: ${key}
+    : `Admins sign in on /host (${jamCount} jam session${jamCount === 1 ? '' : 's'}).`}
+     No host key — accounts own the console; admins create jam sessions from there.
+     Ready.
 `);
 });

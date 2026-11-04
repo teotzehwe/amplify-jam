@@ -10,6 +10,8 @@ import { URL } from 'node:url';
 export function startFakeSupabase() {
   /** @type {Map<string, object>} key = jam_id + '\\0' + id */
   const rows = new Map();
+  /** @type {Map<string, object>} key = org_id + '\\0' + id */
+  const jamRows = new Map();
   let failWrites = 0;
 
   function keyOf(jamId, id) {
@@ -29,16 +31,20 @@ export function startFakeSupabase() {
     }
 
     const url = new URL(req.url || '/', 'http://127.0.0.1');
-    if (!url.pathname.startsWith('/rest/v1/amplify_accounts')) {
+    const isAccounts = url.pathname.startsWith('/rest/v1/amplify_accounts');
+    const isJams = url.pathname.startsWith('/rest/v1/amplify_jams');
+    if (!isAccounts && !isJams) {
       res.writeHead(404, { 'content-type': 'application/json' });
       return res.end(JSON.stringify({ message: 'not found' }));
     }
 
-    const jamEq = url.searchParams.get('jam_id');
+    const jamEq = url.searchParams.get('jam_id') || url.searchParams.get('org_id');
     const jamId = jamEq?.startsWith('eq.') ? jamEq.slice(3) : null;
     const select = url.searchParams.get('select');
     const idNotIn = url.searchParams.get('id');
     const limit = url.searchParams.get('limit');
+    const store = isJams ? jamRows : rows;
+    const scopeKey = isJams ? 'org_id' : 'jam_id';
 
     const json = (status, payload) => {
       res.writeHead(status, { 'content-type': 'application/json' });
@@ -53,9 +59,9 @@ export function startFakeSupabase() {
     }
 
     if (req.method === 'GET') {
-      let list = [...rows.values()];
-      if (jamId) list = list.filter((r) => r.jam_id === jamId);
-      list.sort((a, b) => a.created_at - b.created_at);
+      let list = [...store.values()];
+      if (jamId) list = list.filter((r) => r[scopeKey] === jamId);
+      list.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
       if (limit) list = list.slice(0, Number(limit) || 1);
       if (select === 'id') list = list.map((r) => ({ id: r.id }));
       return json(200, list);
@@ -64,13 +70,14 @@ export function startFakeSupabase() {
     if (req.method === 'POST') {
       const batch = Array.isArray(body) ? body : [body];
       for (const row of batch) {
-        rows.set(keyOf(row.jam_id, row.id), { ...row });
+        const scope = row[scopeKey] || row.jam_id || row.org_id;
+        store.set(keyOf(scope, row.id), { ...row });
       }
       return json(201, null);
     }
 
     if (req.method === 'DELETE') {
-      if (!jamId) return json(400, { message: 'jam_id required' });
+      if (!jamId) return json(400, { message: `${scopeKey} required` });
       if (idNotIn?.startsWith('not.in.')) {
         const inner = idNotIn.slice('not.in.'.length);
         const keep = new Set(
@@ -81,13 +88,13 @@ export function startFakeSupabase() {
             .map((s) => s.trim().replace(/^"|"$/g, ''))
             .filter(Boolean),
         );
-        for (const [k, row] of rows) {
-          if (row.jam_id === jamId && !keep.has(row.id)) rows.delete(k);
+        for (const [k, row] of store) {
+          if (row[scopeKey] === jamId && !keep.has(row.id)) store.delete(k);
         }
         return json(204, null);
       }
-      for (const [k, row] of rows) {
-        if (row.jam_id === jamId) rows.delete(k);
+      for (const [k, row] of store) {
+        if (row[scopeKey] === jamId) store.delete(k);
       }
       return json(204, null);
     }

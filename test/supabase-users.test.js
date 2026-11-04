@@ -38,35 +38,31 @@ before(async () => {
       SUPABASE_URL: supabase.url,
       SUPABASE_SERVICE_ROLE_KEY: supabase.key,
       SUPABASE_JAM_ID: 'amplify-test',
-      HOST_KEY: 'supabase-test-host-key',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  hostKey = await new Promise((resolve, reject) => {
+  await new Promise((resolve, reject) => {
     let buffer = '';
     const timer = setTimeout(() => reject(new Error('server did not start')), 10000);
     server.stdout.on('data', (chunk) => {
       buffer += chunk;
-      if (/listening|Host key|Amplify/i.test(buffer) || buffer.includes('http')) {
-        // HOST_KEY is fixed; wait until the process printed something.
+      if (buffer.includes('Ready.')) {
         clearTimeout(timer);
-        resolve('supabase-test-host-key');
+        resolve();
       }
     });
     server.stderr.on('data', (c) => process.stderr.write(c));
-    // Also resolve once the port answers.
-    const poll = setInterval(async () => {
-      try {
-        const res = await fetch(`${base}/api/health`);
-        if (res.ok || res.status === 503) {
-          clearInterval(poll);
-          clearTimeout(timer);
-          resolve('supabase-test-host-key');
-        }
-      } catch { /* not up yet */ }
-    }, 50);
   });
+
+  const setup = await fetch(`${base}/api/host/setup`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'boss', displayName: 'Boss', password: 'secret1' }),
+  });
+  const setupBody = await setup.json();
+  assert.equal(setup.status, 200, JSON.stringify(setupBody));
+  hostKey = setupBody.token;
 });
 
 after(async () => {
@@ -115,14 +111,6 @@ test('health reports Supabase account sync without secrets', async () => {
 });
 
 test('creating a user dual-writes into Supabase', async () => {
-  // HOST_KEY is set in this suite, so setup requires the host token.
-  const setup = await call('/host/setup', {
-    method: 'POST',
-    body: { username: 'boss', displayName: 'Boss', password: 'password1' },
-    host: true,
-  });
-  assert.equal(setup.status, 200, JSON.stringify(setup.data));
-
   const rows = supabase.listJam('amplify-test');
   assert.ok(rows.some((r) => r.username === 'boss' && r.role === 'admin'));
 
@@ -140,26 +128,25 @@ test('creating a user dual-writes into Supabase', async () => {
   assert.ok(supabase.listJam('amplify-test').some((r) => r.username === 'alex'));
 });
 
-test('accounts survive wiping the night blob when Supabase still has them', async () => {
-  // Confirm accounts exist remotely, then replace jam.json with an empty night.
+test('accounts survive wiping the directory blob when Supabase still has them', async () => {
+  // Confirm accounts exist remotely, then clear local directory users.
   assert.ok(supabase.listJam('amplify-test').length >= 2);
 
-  const emptyNight = {
-    jam: { name: 'Wiped', createdAt: Date.now(), allowSuggestions: true, requireApproval: true, slots: [] },
-    hostToken: hostKey,
+  const emptyDirectory = {
     users: [],
-    players: [],
-    songs: [],
-    rounds: [],
-    current: null,
-    roundIndex: 0,
+    hostSessions: [],
+    deletedUserIds: [],
+    jams: [{
+      id: 'jamrecover',
+      name: 'Recovered',
+      createdAt: Date.now(),
+      createdBy: null,
+      archived: false,
+    }],
   };
-  await writeFile(join(dataDir, 'jam.json'), JSON.stringify(emptyNight, null, 2));
+  await writeFile(join(dataDir, 'directory.json'), JSON.stringify(emptyDirectory, null, 2));
 
-  // Bounce through an API call so the file backend reloads… file backend keeps
-  // in-memory state. Force a fresh process would be heavier; instead hit login
-  // which reads store state — for FileBackend the in-memory copy still has
-  // users. So we verify via a second server against the same DATA_DIR + supabase.
+  // Fresh process reloads directory from disk and heals users from Supabase.
   const port2 = 4200 + Math.floor(Math.random() * 200);
   const base2 = `http://127.0.0.1:${port2}`;
   const child = spawn(process.execPath, [join(ROOT, 'server.js')], {
@@ -170,7 +157,6 @@ test('accounts survive wiping the night blob when Supabase still has them', asyn
       SUPABASE_URL: supabase.url,
       SUPABASE_SERVICE_ROLE_KEY: supabase.key,
       SUPABASE_JAM_ID: 'amplify-test',
-      HOST_KEY: hostKey,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -191,8 +177,15 @@ test('accounts survive wiping the night blob when Supabase still has them', asyn
   });
 
   try {
+    const adminLogin = await fetch(`${base2}/api/host/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'boss', password: 'secret1' }),
+    }).then(async (r) => ({ status: r.status, data: await r.json() }));
+    assert.equal(adminLogin.status, 200, JSON.stringify(adminLogin.data));
+
     const listed = await fetch(`${base2}/api/host/users`, {
-      headers: { 'x-host-token': hostKey },
+      headers: { 'x-host-token': adminLogin.data.token },
     }).then(async (r) => ({ status: r.status, data: await r.json() }));
     assert.equal(listed.status, 200);
     const names = listed.data.users.map((u) => u.username).sort();
@@ -234,7 +227,6 @@ test('a failed Supabase delete does not resurrect the account on reload', async 
       SUPABASE_URL: supabase.url,
       SUPABASE_SERVICE_ROLE_KEY: supabase.key,
       SUPABASE_JAM_ID: 'amplify-test',
-      HOST_KEY: hostKey,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -255,8 +247,15 @@ test('a failed Supabase delete does not resurrect the account on reload', async 
   });
 
   try {
+    const adminLogin = await fetch(`${base2}/api/host/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'boss', password: 'secret1' }),
+    }).then(async (r) => ({ status: r.status, data: await r.json() }));
+    assert.equal(adminLogin.status, 200, JSON.stringify(adminLogin.data));
+
     const again = await fetch(`${base2}/api/host/users`, {
-      headers: { 'x-host-token': hostKey },
+      headers: { 'x-host-token': adminLogin.data.token },
     }).then(async (r) => ({ status: r.status, data: await r.json() }));
     assert.equal(again.status, 200);
     assert.ok(!again.data.users.some((u) => u.id === victim.id));

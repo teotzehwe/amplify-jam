@@ -22,7 +22,9 @@ const songDraft = { title: '', artist: '' };
 /** Optional note while declining a request — survives the 2.5s poll redraw. */
 let declineDraft = null; // { songId, reason }
 /** Admin sign-in / first-admin setup drafts for the host gate. */
-const gateDraft = { username: '', displayName: '', password: '', hostKey: '' };
+const gateDraft = { username: '', displayName: '', password: '' };
+/** After login, pick or create a jam before the console opens. */
+let jamPicker = null; // { jams: [], nameDraft: '' } | null
 let calloutOpen = false;
 let refresh = () => {};
 
@@ -70,12 +72,23 @@ async function loadUsers({ force = false } = {}) {
   }
 
   if (tokens.host) {
-    authed = await api('/host/auth', { method: 'POST', body: { token: tokens.host } })
-      .then(() => true)
+    const auth = await api('/host/auth', { method: 'POST', body: { token: tokens.host } })
+      .then((data) => data)
       .catch(() => {
         tokens.host = '';
-        return false;
+        return null;
       });
+    if (auth) {
+      const jams = auth.jams || [];
+      if (tokens.jam && jams.some((j) => j.id === tokens.jam)) {
+        authed = true;
+      } else if (jams.length === 1) {
+        tokens.jam = jams[0].id;
+        authed = true;
+      } else {
+        jamPicker = { jams, nameDraft: '' };
+      }
+    }
   }
   if (authed) {
     loadUsers().catch(() => {});
@@ -104,7 +117,7 @@ function draw() {
   // Don't steal focus from the tour dialog on live redraws.
   const tourOwnsFocus = Boolean(activeEl?.closest?.('#tour-root'));
 
-  render(app, authed ? console_() : gate());
+  render(app, jamPicker ? jamPickerView() : (authed ? console_() : gate()));
   render(overlayRoot, calloutOpen && state.current ? callout(state.current, { closable: true }) : null);
 
   // First paint gets entrance motion; subsequent live rebuilds stay still.
@@ -133,21 +146,73 @@ function maybeStartHostTour() {
 
 /* -------------------------------------------------------------------- gate */
 
-function enterConsole(token) {
+function enterConsole(token, jamId = null) {
   tokens.host = token;
+  if (jamId) tokens.jam = jamId;
   authed = true;
+  jamPicker = null;
   usersLoaded = false;
   gateDraft.username = '';
   gateDraft.displayName = '';
   gateDraft.password = '';
-  gateDraft.hostKey = '';
   loadUsers().catch(() => {});
   refresh(true);
 }
 
+function openJamPicker(token, jams) {
+  tokens.host = token;
+  jamPicker = { jams: jams || [], nameDraft: '' };
+  draw();
+}
+
+function selectJam(jamId) {
+  tokens.jam = jamId;
+  enterConsole(tokens.host, jamId);
+}
+
+function jamPickerView() {
+  const createJam = guard(busy(async () => {
+    const name = (jamPicker.nameDraft || '').trim() || 'Amplify Open Jam';
+    const data = await api('/jams', { method: 'POST', body: { name } });
+    toast('Jam created');
+    selectJam(data.jam.id);
+  }, 'host-create-jam'));
+
+  return el('div', { class: 'gate stack stack--lg' },
+    masthead('Amplify', 'Host console'),
+    el('section', { class: 'card stack' },
+      el('div', { class: 'card__head' },
+        el('h2', {}, 'Choose a jam'),
+        el('span', { class: 'hint' }, 'Sessions'),
+      ),
+      el('p', { class: 'section-note' },
+        'Accounts belong to your organization. Each jam is its own night — songs and roster stay separate.'),
+      ...(jamPicker.jams.length
+        ? jamPicker.jams.map((j) => el('button', {
+            class: 'btn btn--block',
+            onClick: () => selectJam(j.id),
+          }, j.name || 'Untitled jam'))
+        : [el('p', { class: 'section-note' }, 'No jam sessions yet — create one below.')]),
+      el('div', { class: 'field' },
+        el('label', { for: 'jam-name' }, 'New jam name'),
+        el('input', {
+          id: 'jam-name',
+          type: 'text',
+          maxLength: 60,
+          value: jamPicker.nameDraft,
+          onInput: (e) => { jamPicker.nameDraft = e.target.value; },
+          onKeydown: (e) => e.key === 'Enter' && createJam(e),
+        }),
+      ),
+      el('button', { class: 'btn btn--primary btn--block', onClick: createJam }, 'Create jam'),
+    ),
+  );
+}
+
 function gate() {
+  if (jamPicker) return jamPickerView();
+
   const needsSetup = Boolean(state?.needsHostSetup);
-  const needsHostKey = Boolean(needsSetup && state?.setupRequiresHostKey);
 
   const signIn = guard(busy(async () => {
     const username = gateDraft.username.trim() || $('#gate-username')?.value.trim();
@@ -165,14 +230,15 @@ function gate() {
       body: { username, password },
       as: 'player',
     });
-    enterConsole(data.token);
+    const jams = data.jams || [];
+    if (jams.length === 1) enterConsole(data.token, jams[0].id);
+    else openJamPicker(data.token, jams);
   }, 'host-gate-login'));
 
   const createAdmin = guard(busy(async () => {
     const username = gateDraft.username.trim() || $('#gate-username')?.value.trim();
     const displayName = gateDraft.displayName.trim() || $('#gate-displayname')?.value.trim() || username;
     const password = gateDraft.password || $('#gate-password')?.value || '';
-    const hostKey = gateDraft.hostKey.trim() || $('#gate-hostkey')?.value.trim() || '';
     if (!username) {
       shake($('#gate-username')?.closest('.field') || $('#gate-username'));
       return toast('Pick a username', 'error');
@@ -181,19 +247,13 @@ function gate() {
       shake($('#gate-password')?.closest('.field') || $('#gate-password'));
       return toast('Password needs at least 6 characters', 'error');
     }
-    if (needsHostKey && !hostKey) {
-      shake($('#gate-hostkey')?.closest('.field') || $('#gate-hostkey'));
-      return toast('Enter the host key for this night', 'error');
-    }
-    // Upgraded / env-locked nights require x-host-token; stash it so api() sends it.
-    if (hostKey) tokens.host = hostKey;
     const data = await api('/host/setup', {
       method: 'POST',
       body: { username, displayName, password },
-      as: needsHostKey ? 'auto' : 'player',
+      as: 'player',
     });
     toast('Admin account created');
-    enterConsole(data.token);
+    enterConsole(data.token, data.jam?.id || null);
   }, 'host-gate-setup'));
 
   return el('div', { class: 'gate stack stack--lg' },
@@ -205,10 +265,8 @@ function gate() {
       ),
       el('p', { class: 'section-note' },
         needsSetup
-          ? (needsHostKey
-            ? 'This night already has a host key. Enter it below, then create the first admin account.'
-            : 'This night has no admin yet. Create one to open the console — you will use this username and password next time.')
-          : 'Sign in with an admin account. Musician passwords on the phone do not unlock this console unless that account is marked Admin.'),
+          ? 'Create an admin account first. From there you open jam sessions — there is no shared host key.'
+          : 'Sign in with an admin account, then pick or create a jam session.'),
       el('div', { class: 'field' },
         el('label', { for: 'gate-username' }, 'Username'),
         el('input', {
@@ -246,24 +304,10 @@ function gate() {
           onKeydown: (e) => e.key === 'Enter' && (needsSetup ? createAdmin(e) : signIn(e)),
         }),
       ),
-      needsHostKey
-        ? el('div', { class: 'field' },
-            el('label', { for: 'gate-hostkey' }, 'Host key'),
-            el('input', {
-              id: 'gate-hostkey',
-              type: 'password',
-              autocomplete: 'off',
-              spellcheck: 'false',
-              value: gateDraft.hostKey,
-              onInput: (e) => { gateDraft.hostKey = e.target.value; },
-              onKeydown: (e) => e.key === 'Enter' && createAdmin(e),
-            }),
-          )
-        : null,
       el('button', {
         class: 'btn btn--primary btn--block',
         onClick: needsSetup ? createAdmin : signIn,
-      }, needsSetup ? 'Create admin & open console' : 'Sign in'),
+      }, needsSetup ? 'Create admin & continue' : 'Sign in'),
     ),
   );
 }
@@ -286,6 +330,10 @@ function console_() {
     songs: approvedSongs(state).length,
     users: usersCache.length,
   };
+  const switchJam = guard(busy(async () => {
+    const data = await api('/jams');
+    openJamPicker(tokens.host, data.jams || []);
+  }, 'host-switch-jam'));
 
   const panelTour = {
     now: 'host-now',
@@ -302,10 +350,14 @@ function console_() {
 
   return el('div', { class: 'stack stack--lg' },
     masthead(state.jam.name, `${pluralize(state.roundIndex, 'song')} played · ${present} here now`,
+      el('button', {
+        class: 'btn btn--ghost btn--sm',
+        onClick: switchJam,
+      }, 'Switch jam'),
       tourButton(ADMIN_TOUR, adminTourSteps, 'Admin tour'),
       el('a', {
         class: 'btn btn--ghost btn--sm',
-        href: '/board',
+        href: tokens.jam ? `/board?jam=${encodeURIComponent(tokens.jam)}` : '/board',
         target: '_blank',
         dataset: { tour: 'host-stage' },
       }, 'Stage display ↗'),
@@ -1221,7 +1273,9 @@ function userCard(user) {
 function settingsTab() {
   const jam = state.jam;
   const save = guard((patch) => api('/host/settings', { method: 'PATCH', body: patch }));
-  const signupUrl = `${location.origin}/`;
+  const signupUrl = tokens.jam
+    ? `${location.origin}/?jam=${encodeURIComponent(tokens.jam)}`
+    : `${location.origin}/`;
 
   const copy = (text) => async () => {
     try {

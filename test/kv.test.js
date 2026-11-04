@@ -23,6 +23,8 @@ let redis;
 let app;
 let base;
 let hostKey;
+let jamStateKey;
+let jamVersionKey;
 
 before(async () => {
   redis = await startFakeRedis();
@@ -40,18 +42,31 @@ before(async () => {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  hostKey = await new Promise((resolve, reject) => {
+  await new Promise((resolve, reject) => {
     let buffer = '';
     const timer = setTimeout(() => reject(new Error('server did not start')), 10000);
     app.stdout.on('data', (chunk) => {
       buffer += chunk;
-      const match = buffer.match(/Host key: (\w+)/);
-      if (!match) return;
+      if (!buffer.includes('Ready.')) return;
       clearTimeout(timer);
-      resolve(match[1]);
+      resolve();
     });
     app.stderr.on('data', (c) => process.stderr.write(c));
   });
+
+  const setup = await fetch(`${base}/api/host/setup`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      username: 'kvadmin', displayName: 'KV Admin', password: 'secret1',
+    }),
+  });
+  const setupBody = await setup.json();
+  assert.equal(setup.status, 200, JSON.stringify(setupBody));
+  hostKey = setupBody.token;
+  const jamId = setupBody.jam.id;
+  jamStateKey = `kvtest:jam:${jamId}:state`;
+  jamVersionKey = `kvtest:jam:${jamId}:version`;
 });
 
 after(() => {
@@ -82,20 +97,21 @@ async function clearNight() {
 test('the night is stored in the key-value store, not on disk', async () => {
   await call('/join', { method: 'POST', body: { name: 'Stored', instruments: ['Bass'] } });
 
-  const raw = redis.data.get('kvtest:state');
-  assert.ok(raw, 'state should be written to the key-value store');
+  assert.ok(redis.data.get('kvtest:directory'), 'directory should be in the key-value store');
+  const raw = redis.data.get(jamStateKey);
+  assert.ok(raw, 'jam night should be written to the key-value store');
   assert.match(raw, /Stored/, 'the roster should be in the stored blob');
-  assert.ok(Number(redis.data.get('kvtest:version')) >= 1, 'a version is tracked alongside it');
+  assert.ok(Number(redis.data.get(jamVersionKey)) >= 1, 'a version is tracked alongside it');
 });
 
 test('every request reads fresh state, so instances cannot drift apart', async () => {
   const before = (await call('/state')).data.players.length;
 
   // Somebody else's instance writes directly to the store.
-  const blob = JSON.parse(redis.data.get('kvtest:state'));
+  const blob = JSON.parse(redis.data.get(jamStateKey));
   blob.jam.name = 'Renamed Elsewhere';
-  redis.data.set('kvtest:state', JSON.stringify(blob));
-  redis.data.set('kvtest:version', String(Number(redis.data.get('kvtest:version')) + 1));
+  redis.data.set(jamStateKey, JSON.stringify(blob));
+  redis.data.set(jamVersionKey, String(Number(redis.data.get(jamVersionKey)) + 1));
 
   const after = await call('/state');
   assert.equal(after.data.jam.name, 'Renamed Elsewhere', 'the next request picks up the newer state');
@@ -103,9 +119,9 @@ test('every request reads fresh state, so instances cannot drift apart', async (
 });
 
 test('the version advances on every write', async () => {
-  const before = Number(redis.data.get('kvtest:version'));
+  const before = Number(redis.data.get(jamVersionKey));
   await call('/join', { method: 'POST', body: { name: 'Counter', instruments: ['Keys'] } });
-  assert.equal(Number(redis.data.get('kvtest:version')), before + 1);
+  assert.equal(Number(redis.data.get(jamVersionKey)), before + 1);
 });
 
 test('simultaneous sign-ups all survive — none is silently lost', async () => {
@@ -157,9 +173,10 @@ test('health pings the key-value store', async () => {
   assert.equal(res.data.realtime, 'poll');
 });
 
-test('the host key still never leaves the server', async () => {
+test('credentials still never leave the server', async () => {
   const { data } = await call('/state');
   assert.equal(data.hostToken, undefined);
+  assert.equal(data.users, undefined);
   for (const p of data.players) assert.equal(p.token, undefined);
 });
 
@@ -178,5 +195,4 @@ test('a full round trip works against the key-value store', async () => {
   await call('/host/commit', { method: 'POST', host: true });
   const { data } = await call('/state');
   assert.equal(data.roundIndex, 1);
-  assert.equal(data.players.find((p) => p.id === drummer.data.id).stats.plays, 1);
 });

@@ -32,6 +32,9 @@ let state = null;
 /** Instruments are edited in a scratch copy so a live refresh cannot clobber typing. */
 let instrumentEdit = null;
 
+const _jamFromUrl = new URL(location.href).searchParams.get('jam');
+if (_jamFromUrl) tokens.jam = _jamFromUrl;
+
 const refresh = subscribe((next) => {
   state = next;
   draw();
