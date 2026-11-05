@@ -8,7 +8,14 @@
  * depend on how the platform happens to fill in req.url.
  */
 
-import { handleRequest, store } from '../src/app.js';
+import { handleRequest } from '../src/app.js';
+
+function hasKvStore(env = process.env) {
+  return Boolean(
+    (env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL)
+    && (env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN),
+  );
+}
 
 export default async function handler(req, res) {
   const segments = req.query?.path;
@@ -18,11 +25,10 @@ export default async function handler(req, res) {
     req.url = `/api/${rest}${queryAt === -1 ? '' : req.url.slice(queryAt)}`;
   }
 
-  // The file backend is the one that reports 'sse'. Reaching it here means the
-  // deploy has no key-value store, so every instance would keep its own copy of
-  // the night and musicians would see different jams. Say so plainly rather
-  // than failing in a way that looks like a bug in the app.
-  if (store.realtime === 'sse') {
+  // Do not touch the request-scoped `store` proxy here — jam context is only
+  // bound inside handleRequest. Check Redis env directly instead: without it
+  // every Vercel instance would keep its own night file.
+  if (!hasKvStore()) {
     res.setHeader('content-type', 'application/json; charset=utf-8');
     res.statusCode = 503;
     return res.end(JSON.stringify({
