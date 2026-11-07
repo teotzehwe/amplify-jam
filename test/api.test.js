@@ -155,19 +155,20 @@ test('joining requires a name and at least one instrument', async () => {
 });
 
 test('host endpoints reject a missing or wrong key', async () => {
-  assert.equal((await call('/host/lineup', { method: 'POST', body: {} })).status, 403);
-  assert.equal((await call('/host/pick', { method: 'POST', body: { playerId: 'u1' } })).status, 403);
-  assert.equal((await call('/host/unpick', { method: 'POST', body: { playerId: 'u1' } })).status, 403);
-  assert.equal((await call('/host/settings', { method: 'PATCH', body: { requireApproval: true } })).status, 403);
-  assert.equal((await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true } })).status, 403);
+  // Missing admin session → 401 (session loss). Wrong auth token on /host/auth stays 403.
+  assert.equal((await call('/host/lineup', { method: 'POST', body: {} })).status, 401);
+  assert.equal((await call('/host/pick', { method: 'POST', body: { playerId: 'u1' } })).status, 401);
+  assert.equal((await call('/host/unpick', { method: 'POST', body: { playerId: 'u1' } })).status, 401);
+  assert.equal((await call('/host/settings', { method: 'PATCH', body: { requireApproval: true } })).status, 401);
+  assert.equal((await call('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true } })).status, 401);
   assert.equal((await call('/host/auth', { method: 'POST', body: { token: 'nope' } })).status, 403);
-  assert.equal((await call('/host/songs/ghost/approve', { method: 'POST' })).status, 403);
+  assert.equal((await call('/host/songs/ghost/approve', { method: 'POST' })).status, 401);
 });
 
 test('a session token in a query string does not unlock API routes', async () => {
   // API auth is header-only (x-host-token); query strings must not grant access.
   const res = await fetch(`${base}/api/host/export?k=${encodeURIComponent(hostKey)}`);
-  assert.equal(res.status, 403);
+  assert.equal(res.status, 401);
   assert.match((await res.json()).error, /Sign in as an admin/i);
 });
 
@@ -570,7 +571,7 @@ test('reordering ignores unknown ids and requires the host key', async () => {
   await clearNight();
   const id = (await call('/songs', { method: 'POST', body: { title: 'Only' }, host: true })).data.id;
 
-  assert.equal((await call('/host/songs/order', { method: 'POST', body: { order: [id] } })).status, 403);
+  assert.equal((await call('/host/songs/order', { method: 'POST', body: { order: [id] } })).status, 401);
   assert.equal((await call('/host/songs/order', { method: 'POST', body: { order: 'nope' }, host: true })).status, 400);
 
   await call('/host/songs/order', { method: 'POST', body: { order: ['ghost', id], host: true }, host: true });
@@ -647,7 +648,7 @@ test('the host can download a session PDF report without tokens', async () => {
   });
   await call('/host/commit', { method: 'POST', host: true });
 
-  assert.equal((await call('/host/report')).status, 403);
+  assert.equal((await call('/host/report')).status, 401);
 
   const jamId = (await call('/jams', { host: true })).data.jams[0]?.id;
   assert.ok(jamId);
@@ -666,6 +667,30 @@ test('the host can download a session PDF report without tokens', async () => {
   assert.ok(text.includes('Report Song'));
   assert.ok(!text.includes(player.data.token), 'player tokens must not appear in the PDF');
   assert.ok(!text.includes(hostKey), 'host key must not appear in the PDF');
+
+  // A second jam with its own player must not leak into the first jam's PDF
+  // when x-jam-id selects that other night (and vice versa).
+  const other = await call('/jams', {
+    method: 'POST', body: { name: 'Other Report Jam' }, host: true,
+  });
+  assert.equal(other.status, 200);
+  const otherId = other.data.jam.id;
+  const otherPlayer = await call('/join', {
+    method: 'POST',
+    body: { name: 'OtherReporter', instruments: ['Keys'] },
+    jam: otherId,
+  });
+  assert.equal(otherPlayer.status, 200);
+
+  const otherRes = await fetch(`${base}/api/host/report`, {
+    headers: { 'x-host-token': hostKey, 'x-jam-id': otherId },
+  });
+  assert.equal(otherRes.status, 200);
+  const otherText = Buffer.from(await otherRes.arrayBuffer()).toString('utf8');
+  assert.ok(otherText.includes('OtherReporter'), 'other jam roster should appear');
+  assert.ok(otherText.includes('Other Report Jam') || otherText.includes('Other'), 'other jam name should appear');
+  // First jam's exclusive setlist title must not leak into the other jam's PDF.
+  assert.ok(!otherText.includes('Report Song'), 'first jam setlist must not leak');
 });
 
 test('the host can export and restore a night backup', async () => {

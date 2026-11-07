@@ -31,13 +31,14 @@ let refresh = () => {};
 /**
  * Host-console guard: toast failures, and bounce to the gate on a revoked
  * admin session so a venue tablet does not stay half-logged-in.
+ * Only HTTP 401 (requireHost) signs out — business-rule 403s still toast.
  */
 function guard(fn) {
   return async (...args) => {
     try {
       await fn(...args);
     } catch (err) {
-      if (err.status === 403 && (authed || tokens.host)) {
+      if (err.status === 401 && (authed || tokens.host)) {
         signOutHost(err.message || 'Session ended — sign in again');
         return;
       }
@@ -884,7 +885,7 @@ function personCard(person, maxPlays) {
         key: `remove-player:${person.id}`,
         label: 'Remove',
         title: `Remove ${person.name} from tonight`,
-        onConfirm: () => api(`/players/${person.id}`, { method: 'DELETE' }),
+        onConfirm: guard(() => api(`/players/${person.id}`, { method: 'DELETE' })),
         onChange: draw,
       }),
     ),
@@ -1045,10 +1046,10 @@ function requests() {
                 key: `decline-song:${song.id}`,
                 label: 'Decline',
                 title: `Decline “${song.title}”? You can add a short note next.`,
-                onConfirm: () => {
+                onConfirm: guard(() => {
                   declineDraft = { songId: song.id, reason: '' };
                   draw();
-                },
+                }),
                 onChange: draw,
               }),
             ),
@@ -1128,7 +1129,7 @@ function songAdminCard(song, index) {
         key: `remove-song:${song.id}`,
         label: 'Remove',
         title: `Remove “${song.title}” from the setlist`,
-        onConfirm: () => api(`/songs/${song.id}`, { method: 'DELETE' }),
+        onConfirm: guard(() => api(`/songs/${song.id}`, { method: 'DELETE' })),
         onChange: draw,
       }),
     ),
@@ -1310,13 +1311,13 @@ function userCard(user) {
         key: `remove-user:${user.id}`,
         label: 'Remove',
         title: `Remove account ${user.username}?`,
-        onConfirm: async () => {
+        onConfirm: guard(async () => {
           await api(`/host/users/${user.id}`, { method: 'DELETE' });
           passwordResets.delete(user.id);
           toast('Account removed');
           await loadUsers({ force: true });
           draw();
-        },
+        }),
         onChange: draw,
       }),
     ),
@@ -1413,7 +1414,7 @@ function settingsTab() {
         class: 'btn btn--sm btn--quiet',
         confirmClass: 'btn btn--sm btn--danger',
         title: 'Hide this jam from the picker? The night data stays stored.',
-        onConfirm: async () => {
+        onConfirm: guard(async () => {
           const jamId = tokens.jam;
           if (!jamId) throw new Error('No jam selected');
           const data = await api(`/jams/${encodeURIComponent(jamId)}`, {
@@ -1423,7 +1424,7 @@ function settingsTab() {
           toast('Jam archived');
           tokens.jam = '';
           openJamPicker(tokens.host, data.jams || [], { allowCancel: false });
-        },
+        }),
         onChange: draw,
       }),
     ),
@@ -1501,10 +1502,10 @@ function settingsTab() {
             class: 'btn btn--danger',
             confirmClass: 'btn btn--danger',
             title: 'Reset turn counts? The roster and setlist stay.',
-            onConfirm: async () => {
+            onConfirm: guard(async () => {
               await api('/host/reset', { method: 'POST', body: { mode: 'turns' } });
               toast('Turns reset');
-            },
+            }),
             onChange: draw,
           }),
           confirmButton({
@@ -1513,7 +1514,7 @@ function settingsTab() {
             class: 'btn btn--danger',
             confirmClass: 'btn btn--danger',
             title: 'Clear the whole night — every sign-up and song?',
-            onConfirm: async () => {
+            onConfirm: guard(async () => {
               const backedUpAt = Number(sessionStorage.getItem('amplify.backupAt') || 0);
               if (!backedUpAt || Date.now() - backedUpAt > 15 * 60 * 1000) {
                 const dump = await api('/host/export');
@@ -1527,7 +1528,7 @@ function settingsTab() {
               await api('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true } });
               sessionStorage.removeItem('amplify.backupAt');
               toast('Fresh night');
-            },
+            }),
             onChange: draw,
           }),
         ),

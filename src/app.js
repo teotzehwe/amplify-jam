@@ -290,7 +290,11 @@ const route = (method, pattern, handler) => routes.push({ method, pattern, handl
 
 /** Host console routes require an admin session token (x-host-token). */
 function requireHost(ctx) {
-  if (!directory.isHost(ctx.hostToken)) throw new HttpError(403, 'Sign in as an admin first');
+  // 401 (not 403) so the console can sign out on session loss without treating
+  // business-rule 403s (e.g. mayPlay) as a revoked admin session.
+  if (!directory.isHost(ctx.hostToken)) {
+    throw new HttpError(401, 'Sign in as an admin first');
+  }
 }
 
 route('GET', /^\/api\/state$/, (ctx) => {
