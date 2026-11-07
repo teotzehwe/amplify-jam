@@ -1,7 +1,7 @@
 /* The host console: put a song on deck, pick the band by hand, call it out. */
 
 import {
-  $, api, approvedSongs, busy, confirmButton, coverageFor, el, guard, masthead, pendingSongs,
+  $, api, approvedSongs, busy, confirmButton, coverageFor, el, masthead, pendingSongs,
   playedSongIds, pluralize, render, shake, signupsFor, subscribe, toast, tokens, upNext,
 } from './common.js';
 import { qrSvg } from './qr.js';
@@ -24,9 +24,43 @@ let declineDraft = null; // { songId, reason }
 /** Admin sign-in / first-admin setup drafts for the host gate. */
 const gateDraft = { username: '', displayName: '', password: '' };
 /** After login, pick or create a jam before the console opens. */
-let jamPicker = null; // { jams: [], nameDraft: '' } | null
+let jamPicker = null; // { jams: [], nameDraft: '', allowCancel?: boolean } | null
 let calloutOpen = false;
 let refresh = () => {};
+
+/**
+ * Host-console guard: toast failures, and bounce to the gate on a revoked
+ * admin session so a venue tablet does not stay half-logged-in.
+ * Only HTTP 401 (requireHost) signs out — business-rule 403s still toast.
+ */
+function guard(fn) {
+  return async (...args) => {
+    try {
+      await fn(...args);
+    } catch (err) {
+      if (err.status === 401 && (authed || tokens.host)) {
+        signOutHost(err.message || 'Session ended — sign in again');
+        return;
+      }
+      toast(err.message, 'error');
+    }
+  };
+}
+
+function signOutHost(message) {
+  tokens.host = '';
+  tokens.jam = '';
+  authed = false;
+  jamPicker = null;
+  usersCache = [];
+  usersLoaded = false;
+  usersLoading = null;
+  usersLoadFailed = false;
+  calloutOpen = false;
+  tab = 'now';
+  if (message) toast(message, 'error');
+  draw();
+}
 
 /** Host-managed accounts — loaded with the console, kept outside redraw drafts. */
 let usersCache = [];
@@ -159,15 +193,22 @@ function enterConsole(token, jamId = null) {
   refresh(true);
 }
 
-function openJamPicker(token, jams) {
+function openJamPicker(token, jams, { allowCancel = false } = {}) {
   tokens.host = token;
-  jamPicker = { jams: jams || [], nameDraft: '' };
+  jamPicker = { jams: jams || [], nameDraft: '', allowCancel: Boolean(allowCancel) };
   draw();
 }
 
 function selectJam(jamId) {
   tokens.jam = jamId;
   enterConsole(tokens.host, jamId);
+}
+
+function closeJamPicker() {
+  jamPicker = null;
+  if (tokens.host && tokens.jam) authed = true;
+  draw();
+  if (authed) refresh(true);
 }
 
 function jamPickerView() {
@@ -178,6 +219,8 @@ function jamPickerView() {
     selectJam(data.jam.id);
   }, 'host-create-jam'));
 
+  const currentId = tokens.jam || '';
+
   return el('div', { class: 'gate stack stack--lg' },
     masthead('Amplify', 'Host console'),
     el('section', { class: 'card stack' },
@@ -187,11 +230,20 @@ function jamPickerView() {
       ),
       el('p', { class: 'section-note' },
         'Accounts belong to your organization. Each jam is its own night — songs and roster stay separate.'),
+      jamPicker.allowCancel && currentId
+        ? el('button', {
+            class: 'btn btn--ghost btn--block',
+            onClick: closeJamPicker,
+          }, 'Back to current jam')
+        : null,
       ...(jamPicker.jams.length
-        ? jamPicker.jams.map((j) => el('button', {
-            class: 'btn btn--block',
-            onClick: () => selectJam(j.id),
-          }, j.name || 'Untitled jam'))
+        ? jamPicker.jams.map((j) => {
+            const isCurrent = j.id === currentId;
+            return el('button', {
+              class: isCurrent ? 'btn btn--block btn--primary' : 'btn btn--block',
+              onClick: () => selectJam(j.id),
+            }, isCurrent ? `${j.name || 'Untitled jam'} (current)` : (j.name || 'Untitled jam'));
+          })
         : [el('p', { class: 'section-note' }, 'No jam sessions yet — create one below.')]),
       el('div', { class: 'field' },
         el('label', { for: 'jam-name' }, 'New jam name'),
@@ -332,7 +384,7 @@ function console_() {
   };
   const switchJam = guard(busy(async () => {
     const data = await api('/jams');
-    openJamPicker(tokens.host, data.jams || []);
+    openJamPicker(tokens.host, data.jams || [], { allowCancel: true });
   }, 'host-switch-jam'));
 
   const panelTour = {
@@ -361,6 +413,10 @@ function console_() {
         target: '_blank',
         dataset: { tour: 'host-stage' },
       }, 'Stage display ↗'),
+      el('button', {
+        class: 'btn btn--ghost btn--sm',
+        onClick: () => signOutHost(),
+      }, 'Sign out'),
     ),
 
     el('nav', {
@@ -829,7 +885,7 @@ function personCard(person, maxPlays) {
         key: `remove-player:${person.id}`,
         label: 'Remove',
         title: `Remove ${person.name} from tonight`,
-        onConfirm: () => api(`/players/${person.id}`, { method: 'DELETE' }),
+        onConfirm: guard(() => api(`/players/${person.id}`, { method: 'DELETE' })),
         onChange: draw,
       }),
     ),
@@ -990,10 +1046,10 @@ function requests() {
                 key: `decline-song:${song.id}`,
                 label: 'Decline',
                 title: `Decline “${song.title}”? You can add a short note next.`,
-                onConfirm: () => {
+                onConfirm: guard(() => {
                   declineDraft = { songId: song.id, reason: '' };
                   draw();
-                },
+                }),
                 onChange: draw,
               }),
             ),
@@ -1073,7 +1129,7 @@ function songAdminCard(song, index) {
         key: `remove-song:${song.id}`,
         label: 'Remove',
         title: `Remove “${song.title}” from the setlist`,
-        onConfirm: () => api(`/songs/${song.id}`, { method: 'DELETE' }),
+        onConfirm: guard(() => api(`/songs/${song.id}`, { method: 'DELETE' })),
         onChange: draw,
       }),
     ),
@@ -1255,13 +1311,13 @@ function userCard(user) {
         key: `remove-user:${user.id}`,
         label: 'Remove',
         title: `Remove account ${user.username}?`,
-        onConfirm: async () => {
+        onConfirm: guard(async () => {
           await api(`/host/users/${user.id}`, { method: 'DELETE' });
           passwordResets.delete(user.id);
           toast('Account removed');
           await loadUsers({ force: true });
           draw();
-        },
+        }),
         onChange: draw,
       }),
     ),
@@ -1350,6 +1406,27 @@ function settingsTab() {
           onChange: (e) => save({ name: e.target.value }),
         }),
       ),
+      el('p', { class: 'section-note' },
+        'This name also updates the jam list on Switch jam.'),
+      confirmButton({
+        key: 'archive-jam',
+        label: 'Archive this jam',
+        class: 'btn btn--sm btn--quiet',
+        confirmClass: 'btn btn--sm btn--danger',
+        title: 'Hide this jam from the picker? The night data stays stored.',
+        onConfirm: guard(async () => {
+          const jamId = tokens.jam;
+          if (!jamId) throw new Error('No jam selected');
+          const data = await api(`/jams/${encodeURIComponent(jamId)}`, {
+            method: 'PATCH',
+            body: { archived: true },
+          });
+          toast('Jam archived');
+          tokens.jam = '';
+          openJamPicker(tokens.host, data.jams || [], { allowCancel: false });
+        }),
+        onChange: draw,
+      }),
     ),
 
     el('div', { class: 'stack' },
@@ -1425,10 +1502,10 @@ function settingsTab() {
             class: 'btn btn--danger',
             confirmClass: 'btn btn--danger',
             title: 'Reset turn counts? The roster and setlist stay.',
-            onConfirm: async () => {
+            onConfirm: guard(async () => {
               await api('/host/reset', { method: 'POST', body: { mode: 'turns' } });
               toast('Turns reset');
-            },
+            }),
             onChange: draw,
           }),
           confirmButton({
@@ -1437,7 +1514,7 @@ function settingsTab() {
             class: 'btn btn--danger',
             confirmClass: 'btn btn--danger',
             title: 'Clear the whole night — every sign-up and song?',
-            onConfirm: async () => {
+            onConfirm: guard(async () => {
               const backedUpAt = Number(sessionStorage.getItem('amplify.backupAt') || 0);
               if (!backedUpAt || Date.now() - backedUpAt > 15 * 60 * 1000) {
                 const dump = await api('/host/export');
@@ -1451,7 +1528,7 @@ function settingsTab() {
               await api('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true } });
               sessionStorage.removeItem('amplify.backupAt');
               toast('Fresh night');
-            },
+            }),
             onChange: draw,
           }),
         ),
@@ -1473,12 +1550,18 @@ function downloadJson(filename, data) {
 /** Fetch the host session PDF and trigger a browser download (not via api()). */
 async function downloadSessionReport() {
   if (!tokens.host) throw new Error('Sign in to the host console first');
+  if (!tokens.jam) throw new Error('Pick a jam session first');
   const res = await fetch('/api/host/report', {
-    headers: { 'x-host-token': tokens.host },
+    headers: {
+      'x-host-token': tokens.host,
+      'x-jam-id': tokens.jam,
+    },
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `Request failed (${res.status})`);
+    const err = new Error(data.error || `Request failed (${res.status})`);
+    err.status = res.status;
+    throw err;
   }
   const blob = await res.blob();
   const match = /filename="([^"]+)"/i.exec(res.headers.get('content-disposition') || '');

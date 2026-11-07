@@ -290,7 +290,11 @@ const route = (method, pattern, handler) => routes.push({ method, pattern, handl
 
 /** Host console routes require an admin session token (x-host-token). */
 function requireHost(ctx) {
-  if (!directory.isHost(ctx.hostToken)) throw new HttpError(403, 'Sign in as an admin first');
+  // 401 (not 403) so the console can sign out on session loss without treating
+  // business-rule 403s (e.g. mayPlay) as a revoked admin session.
+  if (!directory.isHost(ctx.hostToken)) {
+    throw new HttpError(401, 'Sign in as an admin first');
+  }
 }
 
 route('GET', /^\/api\/state$/, (ctx) => {
@@ -692,6 +696,48 @@ route('POST', /^\/api\/jams$/, async (ctx) => {
   return { jam: { id: jam.id, name: jam.name, createdAt: jam.createdAt, createdBy: jam.createdBy } };
 });
 
+/** Rename or archive a jam in the org catalog (directory-only). */
+route('PATCH', /^\/api\/jams\/([\w-]+)$/, (ctx) => {
+  requireHost(ctx);
+  const jamId = ctx.params[0];
+  const entry = (directory.state.jams || []).find((j) => j.id === jamId);
+  if (!entry || entry.archived) throw new HttpError(404, 'Jam not found');
+
+  const body = ctx.body || {};
+  const nextName = body.name != null
+    ? (str(body.name, { max: 60, field: 'Name' }) || entry.name)
+    : null;
+  const archive = body.archived === true;
+  if (nextName == null && !archive) throw bad('Nothing to update');
+
+  // Keep at least one open jam so hosts are not locked out of the picker.
+  if (archive) {
+    const openCount = (directory.state.jams || []).filter((j) => !j.archived).length;
+    if (openCount <= 1) throw bad('Create another jam before archiving the last one');
+  }
+
+  directory.update((state) => {
+    const jam = (state.jams || []).find((j) => j.id === jamId);
+    if (!jam || jam.archived) return;
+    if (nextName != null) jam.name = nextName;
+    if (archive) jam.archived = true;
+  });
+
+  const jam = (directory.state.jams || []).find((j) => j.id === jamId);
+  return {
+    jam: jam
+      ? {
+          id: jam.id,
+          name: jam.name,
+          createdAt: jam.createdAt,
+          createdBy: jam.createdBy,
+          archived: Boolean(jam.archived),
+        }
+      : null,
+    jams: directory.publicJams(),
+  };
+});
+
 route('GET', /^\/api\/host\/users$/, (ctx) => {
   requireHost(ctx);
   return {
@@ -992,9 +1038,14 @@ route('POST', /^\/api\/host\/auth$/, (ctx) => {
 route('PATCH', /^\/api\/host\/settings$/, (ctx) => {
   requireHost(ctx);
   const body = ctx.body;
+  const jamId = resolveJamId(ctx);
+  let renamed = null;
   store.update((state) => {
     const jam = state.jam;
-    if (body.name != null) jam.name = str(body.name, { max: 60, fallback: jam.name }) || jam.name;
+    if (body.name != null) {
+      jam.name = str(body.name, { max: 60, fallback: jam.name }) || jam.name;
+      renamed = jam.name;
+    }
     if (body.allowSuggestions != null) jam.allowSuggestions = Boolean(body.allowSuggestions);
     if (body.slots != null) jam.slots = parseSlots(body.slots, jam.slots);
     if (body.requireApproval != null) {
@@ -1006,6 +1057,13 @@ route('PATCH', /^\/api\/host\/settings$/, (ctx) => {
       }
     }
   });
+  // Keep the org catalog name in sync with the night blob (picker / Switch jam).
+  if (renamed != null && jamId) {
+    directory.update((state) => {
+      const entry = (state.jams || []).find((j) => j.id === jamId && !j.archived);
+      if (entry) entry.name = renamed;
+    });
+  }
   return { ok: true };
 });
 

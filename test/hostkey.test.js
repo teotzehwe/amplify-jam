@@ -89,9 +89,9 @@ test('host setup stays closed when accounts exist but no enabled admin', async (
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ username: 'intruder', displayName: 'Nope', password: 'secret1' }),
     });
-    assert.equal(setup.status, 403);
+    assert.equal(setup.status, 401);
     const body = await setup.json();
-    assert.match(body.error || '', /admin/i);
+    assert.match(body.error || '', /admin|Sign in/i);
   } finally {
     proc.kill();
     await rm(dataDir, { recursive: true, force: true });
