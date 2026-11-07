@@ -28,7 +28,9 @@ export default async function handler(req, res) {
   // Do not touch the request-scoped `store` proxy here — jam context is only
   // bound inside handleRequest. Check Redis env directly instead: without it
   // every Vercel instance would keep its own night file.
-  if (!hasKvStore()) {
+  // /api/health is exempt so operators still get storeOk/hasKv diagnostics.
+  const pathOnly = String(req.url || '').split('?')[0];
+  if (!hasKvStore() && pathOnly !== '/api/health') {
     res.setHeader('content-type', 'application/json; charset=utf-8');
     res.statusCode = 503;
     return res.end(JSON.stringify({
