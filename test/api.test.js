@@ -75,7 +75,7 @@ after(async () => {
 /* ------------------------------------------------------------------ helpers */
 
 async function call(path, {
-  method = 'GET', body, host = false, player, forwardedFor,
+  method = 'GET', body, host = false, player, jam, forwardedFor,
 } = {}) {
   const res = await fetch(base + '/api' + path, {
     method,
@@ -83,6 +83,7 @@ async function call(path, {
       ...(body ? { 'content-type': 'application/json' } : {}),
       ...(host ? { 'x-host-token': hostKey } : {}),
       ...(player ? { 'x-player-token': player } : {}),
+      ...(jam ? { 'x-jam-id': jam } : {}),
       ...(forwardedFor ? { 'x-forwarded-for': forwardedFor } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -648,8 +649,10 @@ test('the host can download a session PDF report without tokens', async () => {
 
   assert.equal((await call('/host/report')).status, 403);
 
+  const jamId = (await call('/jams', { host: true })).data.jams[0]?.id;
+  assert.ok(jamId);
   const res = await fetch(`${base}/api/host/report`, {
-    headers: { 'x-host-token': hostKey },
+    headers: { 'x-host-token': hostKey, 'x-jam-id': jamId },
   });
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type') || '', /application\/pdf/);
@@ -816,6 +819,64 @@ test('admins can create another jam session', async () => {
 
   const listed = await call('/jams', { host: true });
   assert.ok(listed.data.jams.some((j) => j.id === created.data.jam.id));
+});
+
+test('renaming a jam updates the catalog and archive hides it', async () => {
+  const created = await call('/jams', {
+    method: 'POST',
+    body: { name: 'Scratch Night' },
+    host: true,
+  });
+  assert.equal(created.status, 200, JSON.stringify(created.data));
+  const jamId = created.data.jam.id;
+
+  const renamed = await call('/host/settings', {
+    method: 'PATCH',
+    body: { name: 'Renamed Night' },
+    host: true,
+    jam: jamId,
+  });
+  assert.equal(renamed.status, 200, JSON.stringify(renamed.data));
+
+  const listed = await call('/jams', { host: true });
+  const row = listed.data.jams.find((j) => j.id === jamId);
+  assert.ok(row);
+  assert.equal(row.name, 'Renamed Night');
+
+  const archived = await call(`/jams/${jamId}`, {
+    method: 'PATCH',
+    body: { archived: true },
+    host: true,
+  });
+  assert.equal(archived.status, 200, JSON.stringify(archived.data));
+  assert.equal(archived.data.jam.archived, true);
+  assert.equal(
+    (await call('/jams', { host: true })).data.jams.some((j) => j.id === jamId),
+    false,
+  );
+});
+
+test('cannot archive the last open jam', async () => {
+  const listed = await call('/jams', { host: true });
+  assert.ok(listed.data.jams.length >= 1);
+  // Archive every jam but one first if needed — leave exactly one open.
+  const open = listed.data.jams;
+  for (const jam of open.slice(0, -1)) {
+    const res = await call(`/jams/${jam.id}`, {
+      method: 'PATCH',
+      body: { archived: true },
+      host: true,
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.data));
+  }
+  const last = (await call('/jams', { host: true })).data.jams[0];
+  assert.ok(last);
+  const refused = await call(`/jams/${last.id}`, {
+    method: 'PATCH',
+    body: { archived: true },
+    host: true,
+  });
+  assert.equal(refused.status, 400);
 });
 
 test('night backups omit host sessions and import keeps live sessions', async () => {
