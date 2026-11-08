@@ -397,6 +397,67 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .card--pad-sm { padding: var(--space-3); }
 .card--alert { background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius); padding: var(--space-4); margin-bottom: var(--space-5); }
 
+/* Host Now: pending song-request jump chip */
+.request-chip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  box-shadow: 0 var(--press-depth) 0 0 var(--line-strong);
+}
+.request-chip:hover { background: var(--surface); }
+.request-chip:active {
+  transform: translateY(2px);
+  box-shadow: 0 calc(var(--press-depth) - 2px) 0 0 var(--line-strong);
+}
+.request-chip__count {
+  flex: 0 0 auto;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  display: inline-grid;
+  place-items: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: var(--amber);
+  color: var(--ink-on-amber, #fff);
+  border-radius: 6px;
+  font-size: var(--text-sm);
+}
+.request-chip__label { font-weight: 600; letter-spacing: -0.01em; }
+
+/* Settings: fold report / backup / wipe under one summary */
+details.card--fold > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-weight: 500;
+}
+details.card--fold > summary::-webkit-details-marker { display: none; }
+details.card--fold > summary::after {
+  content: "▾";
+  margin-left: auto;
+  color: var(--faint);
+  font-size: var(--text-sm);
+  transition: transform 0.2s ease;
+}
+details.card--fold[open] > summary::after { transform: rotate(180deg); }
+details.card--fold > summary + * { margin-top: var(--space-4); }
+.card--fold__title {
+  font-size: var(--text-lg);
+  letter-spacing: -0.015em;
+}
+
 .card__head {
   display: flex;
   align-items: baseline;

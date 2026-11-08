@@ -18,9 +18,39 @@ const draft = {
   stances: {},
 };
 
-/** Guest join vs password sign-in on the entry screen. */
-let entryMode = 'join'; // 'join' | 'signin'
+/**
+ * Guest join vs password sign-in on the entry screen.
+ * Null until first paint — then prefer the last choice, else Sign in when
+ * accounts exist so returning musicians are not pushed through guest join.
+ */
+let entryMode = null; // 'join' | 'signin' | null
+const ENTRY_MODE_KEY = 'amplify.playerEntryMode';
 const loginDraft = { username: '', password: '' };
+
+function readSavedEntryMode() {
+  try {
+    const saved = localStorage.getItem(ENTRY_MODE_KEY);
+    if (saved === 'join' || saved === 'signin') return saved;
+  } catch { /* private mode */ }
+  return null;
+}
+
+function resolveEntryMode(hasUsers) {
+  // Explicit in-memory or saved choice sticks. Derived fallback follows
+  // current hasUsers so a later account list does not stay stuck on guest.
+  if (entryMode === 'join' || entryMode === 'signin') return entryMode;
+  const saved = readSavedEntryMode();
+  if (saved) {
+    entryMode = saved;
+    return entryMode;
+  }
+  return hasUsers ? 'signin' : 'join';
+}
+
+function setEntryMode(mode) {
+  entryMode = mode;
+  try { localStorage.setItem(ENTRY_MODE_KEY, mode); } catch { /* ignore */ }
+}
 
 /**
  * Held outside the render so a live update from anyone else in the room
@@ -90,7 +120,8 @@ function draw() {
 function playerSteps() {
   return playerTourSteps({
     you: me,
-    entryMode: () => entryMode,
+    // Match signupView: guest-only when no accounts, else remembered/default mode.
+    entryMode: () => (state?.hasUsers ? resolveEntryMode(true) : 'join'),
     suggestionsOn: () => Boolean(state?.jam?.allowSuggestions),
   });
 }
@@ -446,7 +477,7 @@ function signupView() {
     refresh(true);
   }, 'player-login'));
 
-  const mode = showSignIn ? entryMode : 'join';
+  const mode = showSignIn ? resolveEntryMode(true) : 'join';
 
   return el('div', { class: 'stack stack--lg' },
     masthead(state.jam.name, 'Hey! Jump in and tell us who you are.',
@@ -460,14 +491,14 @@ function signupView() {
             role: 'tab',
             class: `btn btn--sm${mode === 'join' ? ' btn--primary' : ' btn--ghost'}`,
             'aria-selected': String(mode === 'join'),
-            onClick: () => { entryMode = 'join'; draw(); },
+            onClick: () => { setEntryMode('join'); draw(); },
           }, 'Join as guest'),
           el('button', {
             type: 'button',
             role: 'tab',
             class: `btn btn--sm${mode === 'signin' ? ' btn--primary' : ' btn--ghost'}`,
             'aria-selected': String(mode === 'signin'),
-            onClick: () => { entryMode = 'signin'; draw(); },
+            onClick: () => { setEntryMode('signin'); draw(); },
           }, 'Sign in'),
         )
       : null,
