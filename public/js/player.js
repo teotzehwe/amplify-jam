@@ -36,9 +36,15 @@ function readSavedEntryMode() {
 }
 
 function resolveEntryMode(hasUsers) {
+  // Explicit in-memory or saved choice sticks. Derived fallback follows
+  // current hasUsers so a later account list does not stay stuck on guest.
   if (entryMode === 'join' || entryMode === 'signin') return entryMode;
-  entryMode = readSavedEntryMode() || (hasUsers ? 'signin' : 'join');
-  return entryMode;
+  const saved = readSavedEntryMode();
+  if (saved) {
+    entryMode = saved;
+    return entryMode;
+  }
+  return hasUsers ? 'signin' : 'join';
 }
 
 function setEntryMode(mode) {
@@ -114,7 +120,8 @@ function draw() {
 function playerSteps() {
   return playerTourSteps({
     you: me,
-    entryMode: () => resolveEntryMode(Boolean(state?.hasUsers)),
+    // Match signupView: guest-only when no accounts, else remembered/default mode.
+    entryMode: () => (state?.hasUsers ? resolveEntryMode(true) : 'join'),
     suggestionsOn: () => Boolean(state?.jam?.allowSuggestions),
   });
 }
