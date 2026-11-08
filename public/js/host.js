@@ -26,6 +26,8 @@ const gateDraft = { username: '', displayName: '', password: '' };
 /** After login, pick or create a jam before the console opens. */
 let jamPicker = null; // { jams: [], nameDraft: '', allowCancel?: boolean } | null
 let calloutOpen = false;
+/** Settings “Reports & backups” disclosure — kept across live redraws. */
+let settingsOpsOpen = false;
 let refresh = () => {};
 
 /**
@@ -485,7 +487,23 @@ function onTabKey(e) {
 /* -------------------------------------------------------------------- now */
 
 function nowTab() {
-  return state.current ? callSheet(state.current) : songChooser();
+  const waiting = pendingSongs(state).length;
+  const requestsChip = waiting
+    ? el('button', {
+        type: 'button',
+        class: 'request-chip',
+        onClick: () => { tab = 'songs'; draw(); },
+      },
+        el('span', { class: 'request-chip__count' }, String(waiting)),
+        el('span', { class: 'request-chip__label' },
+          waiting === 1 ? 'song request waiting — review' : 'song requests waiting — review'),
+      )
+    : null;
+
+  return el('div', { class: 'stack' },
+    requestsChip,
+    state.current ? callSheet(state.current) : songChooser(),
+  );
 }
 
 const songById = (id) => state.songs.find((s) => s.id === id) || null;
@@ -1342,6 +1360,8 @@ function settingsTab() {
     }
   };
 
+  // Night settings stay open; report / backup / wipe tuck under one fold so
+  // the first screenful is share + band + gates — what hosts need mid-show.
   return el('div', { class: 'stack' },
     el('section', { class: 'card', dataset: { tour: 'host-share' } },
       el('div', { class: 'card__head' },
@@ -1429,108 +1449,123 @@ function settingsTab() {
       }),
     ),
 
-    el('div', { class: 'stack' },
-      el('section', { class: 'card stack', dataset: { tour: 'host-ops' } },
-        el('div', { class: 'card__head' }, el('h2', {}, 'Session report')),
-        el('p', { class: 'section-note' },
-          'A shareable PDF of tonight — roster, setlist, who played, and waiting or declined requests. No session tokens.'),
-        el('div', { class: 'row row--wrap' },
-          el('button', {
-            class: 'btn btn--primary',
-            onClick: guard(busy(async () => {
-              await downloadSessionReport();
-              toast('Session report downloaded');
-            }, 'host-report')),
-          }, 'Download PDF report'),
-        ),
+    el('details', {
+      class: 'card stack card--fold',
+      open: settingsOpsOpen,
+      dataset: { tour: 'host-ops' },
+      onToggle: (e) => { settingsOpsOpen = e.target.open; },
+    },
+      el('summary', {},
+        el('span', { class: 'card--fold__title' }, 'Reports & backups'),
+        el('span', { class: 'hint' }, 'PDF, restore, clear night'),
       ),
-
-      el('section', { class: 'card stack' },
-        el('div', { class: 'card__head' }, el('h2', {}, 'Backup')),
-        el('p', { class: 'section-note' },
-          'Download the whole night (roster, songs, player session tokens, and registered accounts) so you can restore if Redis hiccups or someone clears too soon.'),
-        el('p', { class: 'section-note' },
-          'Treat the file like a password file: it includes account password hashes and salts plus session tokens. Anyone with it can restore those phones onto a night or attack the hashes offline. Do not post it in chat or email.'),
-        el('div', { class: 'row row--wrap' },
-          el('button', {
-            class: 'btn btn--primary',
-            onClick: guard(busy(async () => {
-              const dump = await api('/host/export');
-              const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-              const name = (jam.name || 'amplify-night').replace(/[^\w.-]+/g, '-').slice(0, 40);
-              downloadJson(`${name}-${stamp}.json`, dump);
-              sessionStorage.setItem('amplify.backupAt', String(Date.now()));
-              toast('Backup downloaded — keep the file private');
-            })),
-          }, 'Download backup'),
-          el('label', { class: 'btn btn--ghost', style: { cursor: 'pointer' } },
-            'Restore backup…',
-            el('input', {
-              type: 'file',
-              accept: 'application/json,.json',
-              style: { display: 'none' },
-              onChange: guard(busy(async (e) => {
-                const file = e.target.files?.[0];
-                e.target.value = '';
-                if (!file) return;
-                let dump;
-                try {
-                  dump = JSON.parse(await file.text());
-                } catch {
-                  return toast('That file is not valid JSON', 'error');
-                }
-                if (!confirm(`Replace the live night with “${dump.night?.jam?.name || dump.jam?.name || 'this backup'}”? Everyone’s current sheet will change.`)) {
-                  return;
-                }
-                await api('/host/import', { method: 'POST', body: dump });
-                toast('Night restored');
-                refresh(true);
-              }, 'host-import')),
-            }),
+      el('div', { class: 'stack' },
+        el('section', { class: 'stack' },
+          el('div', { class: 'card__head' }, el('h2', {}, 'Session report')),
+          el('p', { class: 'section-note' },
+            'A shareable PDF of tonight — roster, setlist, who played, and waiting or declined requests. No session tokens.'),
+          el('div', { class: 'row row--wrap' },
+            el('button', {
+              class: 'btn btn--primary',
+              onClick: guard(busy(async () => {
+                await downloadSessionReport();
+                toast('Session report downloaded');
+              }, 'host-report')),
+            }, 'Download PDF report'),
           ),
         ),
-      ),
 
-      el('section', { class: 'card stack' },
-        el('div', { class: 'card__head' }, el('h2', {}, 'Start over')),
-        el('p', { class: 'section-note' },
-          'Clearing the night needs a fresh backup download first — there is no undo.'),
-        el('div', { class: 'row row--wrap' },
-          confirmButton({
-            key: 'reset-turns',
-            label: 'Reset turn counts',
-            class: 'btn btn--danger',
-            confirmClass: 'btn btn--danger',
-            title: 'Reset turn counts? The roster and setlist stay.',
-            onConfirm: guard(async () => {
-              await api('/host/reset', { method: 'POST', body: { mode: 'turns' } });
-              toast('Turns reset');
-            }),
-            onChange: draw,
-          }),
-          confirmButton({
-            key: 'clear-night',
-            label: 'Clear the night',
-            class: 'btn btn--danger',
-            confirmClass: 'btn btn--danger',
-            title: 'Clear the whole night — every sign-up and song?',
-            onConfirm: guard(async () => {
-              const backedUpAt = Number(sessionStorage.getItem('amplify.backupAt') || 0);
-              if (!backedUpAt || Date.now() - backedUpAt > 15 * 60 * 1000) {
+        el('hr', { class: 'divider' }),
+
+        el('section', { class: 'stack' },
+          el('div', { class: 'card__head' }, el('h2', {}, 'Backup')),
+          el('p', { class: 'section-note' },
+            'Download the whole night (roster, songs, player session tokens, and registered accounts) so you can restore if Redis hiccups or someone clears too soon.'),
+          el('p', { class: 'section-note' },
+            'Treat the file like a password file: it includes account password hashes and salts plus session tokens. Anyone with it can restore those phones onto a night or attack the hashes offline. Do not post it in chat or email.'),
+          el('div', { class: 'row row--wrap' },
+            el('button', {
+              class: 'btn btn--primary',
+              onClick: guard(busy(async () => {
                 const dump = await api('/host/export');
                 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
                 const name = (jam.name || 'amplify-night').replace(/[^\w.-]+/g, '-').slice(0, 40);
                 downloadJson(`${name}-${stamp}.json`, dump);
                 sessionStorage.setItem('amplify.backupAt', String(Date.now()));
-                toast('Backup downloaded — tap Clear again to wipe the night');
-                return;
-              }
-              await api('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true } });
-              sessionStorage.removeItem('amplify.backupAt');
-              toast('Fresh night');
+                toast('Backup downloaded — keep the file private');
+              })),
+            }, 'Download backup'),
+            el('label', { class: 'btn btn--ghost', style: { cursor: 'pointer' } },
+              'Restore backup…',
+              el('input', {
+                type: 'file',
+                accept: 'application/json,.json',
+                style: { display: 'none' },
+                onChange: guard(busy(async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!file) return;
+                  let dump;
+                  try {
+                    dump = JSON.parse(await file.text());
+                  } catch {
+                    return toast('That file is not valid JSON', 'error');
+                  }
+                  if (!confirm(`Replace the live night with “${dump.night?.jam?.name || dump.jam?.name || 'this backup'}”? Everyone’s current sheet will change.`)) {
+                    return;
+                  }
+                  await api('/host/import', { method: 'POST', body: dump });
+                  toast('Night restored');
+                  refresh(true);
+                }, 'host-import')),
+              }),
+            ),
+          ),
+        ),
+
+        el('hr', { class: 'divider' }),
+
+        el('section', { class: 'stack' },
+          el('div', { class: 'card__head' }, el('h2', {}, 'Start over')),
+          el('p', { class: 'section-note' },
+            'Clearing the night needs a fresh backup download first — there is no undo.'),
+          el('div', { class: 'row row--wrap' },
+            confirmButton({
+              key: 'reset-turns',
+              label: 'Reset turn counts',
+              class: 'btn btn--danger',
+              confirmClass: 'btn btn--danger',
+              title: 'Reset turn counts? The roster and setlist stay.',
+              onConfirm: guard(async () => {
+                await api('/host/reset', { method: 'POST', body: { mode: 'turns' } });
+                toast('Turns reset');
+              }),
+              onChange: draw,
             }),
-            onChange: draw,
-          }),
+            confirmButton({
+              key: 'clear-night',
+              label: 'Clear the night',
+              class: 'btn btn--danger',
+              confirmClass: 'btn btn--danger',
+              title: 'Clear the whole night — every sign-up and song?',
+              onConfirm: guard(async () => {
+                const backedUpAt = Number(sessionStorage.getItem('amplify.backupAt') || 0);
+                if (!backedUpAt || Date.now() - backedUpAt > 15 * 60 * 1000) {
+                  const dump = await api('/host/export');
+                  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+                  const name = (jam.name || 'amplify-night').replace(/[^\w.-]+/g, '-').slice(0, 40);
+                  downloadJson(`${name}-${stamp}.json`, dump);
+                  sessionStorage.setItem('amplify.backupAt', String(Date.now()));
+                  toast('Backup downloaded — tap Clear again to wipe the night');
+                  return;
+                }
+                await api('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true } });
+                sessionStorage.removeItem('amplify.backupAt');
+                toast('Fresh night');
+              }),
+              onChange: draw,
+            }),
+          ),
         ),
       ),
     ),
