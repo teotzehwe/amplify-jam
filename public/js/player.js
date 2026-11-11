@@ -61,6 +61,8 @@ const suggestion = { title: '', artist: '' };
 let state = null;
 /** Instruments are edited in a scratch copy so a live refresh cannot clobber typing. */
 let instrumentEdit = null;
+/** Last seated state — edge-trigger toast/vibrate when the host puts you on. */
+let wasSeated = false;
 
 const _jamFromUrl = new URL(location.href).searchParams.get('jam');
 if (_jamFromUrl) tokens.jam = _jamFromUrl;
@@ -567,6 +569,12 @@ function youView(you) {
   const onDeck = state.current;
   const yourSlot = onDeck?.picks.find((p) => p.playerId === you.id);
   const song = onDeck ? state.songs.find((s) => s.id === onDeck.songId) : null;
+  const seated = Boolean(yourSlot);
+  if (seated && !wasSeated) {
+    toast("You're up!", 'success');
+    try { navigator.vibrate?.([80, 40, 80]); } catch { /* ignore */ }
+  }
+  wasSeated = seated;
 
   const save = guard(async (patch) => {
     await api(`/players/${you.id}`, { method: 'PATCH', body: patch });
@@ -581,11 +589,11 @@ function youView(you) {
     ),
 
     yourSlot
-      ? el('section', { class: 'onstage' },
+      ? el('section', { class: 'onstage onstage--sticky', role: 'status', 'aria-live': 'polite' },
           el('div', { class: 'kicker' }, "You're up!"),
           el('div', { class: 'what' }, `${yourSlot.instrument} · ${song ? song.title : 'Next song'}`),
           el('p', { class: 'muted small', style: { marginTop: '6px' } },
-            "Okay! You're in the queue, stay tuned for when the host calls everyone up!"),
+            'Stay close — the host is calling the band for this one.'),
         )
       : null,
 

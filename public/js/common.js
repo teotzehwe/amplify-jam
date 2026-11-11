@@ -193,6 +193,9 @@ export async function api(path, { method = 'GET', body, as = 'auto' } = {}) {
   throw lastErr;
 }
 
+/** True after a connection banner was shown — clear flashes “You’re back”. */
+let connectionWasDown = false;
+
 /**
  * Sticky banner for outages (Redis missing, network down). Survives redraws
  * because it lives outside `#app`.
@@ -200,9 +203,13 @@ export async function api(path, { method = 'GET', body, as = 'auto' } = {}) {
 export function setConnectionBanner(message, kind = 'error') {
   let node = document.getElementById('conn-banner');
   if (!message) {
+    const recovering = connectionWasDown;
+    connectionWasDown = false;
     node?.remove();
+    if (recovering) toast("You're back — live again", 'success');
     return;
   }
+  connectionWasDown = true;
   if (!node) {
     node = el('div', { id: 'conn-banner', role: 'alert' });
     document.body.prepend(node);
@@ -230,7 +237,7 @@ export function toast(message, kind = '') {
     node.classList.add('is-leaving');
     node.classList.remove('is-shown');
     toastLeaveTimer = setTimeout(() => {
-      node.classList.remove('is-leaving', 'toast--error', 'toast--success');
+      node.className = 'toast';
       node.replaceChildren();
     }, 220);
   }, 2600);
