@@ -397,6 +397,107 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .card--pad-sm { padding: var(--space-3); }
 .card--alert { background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius); padding: var(--space-4); margin-bottom: var(--space-5); }
 
+/* Host masthead overflow — Stage + Sign out stay; Switch/Tour in More */
+.masthead-more {
+  position: relative;
+  display: inline-block;
+}
+.masthead-more > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.masthead-more > summary::-webkit-details-marker { display: none; }
+.masthead-more__menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  min-width: 11rem;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 0 0 var(--line-strong);
+}
+.masthead-more__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-weight: 600;
+  font-size: var(--text-sm);
+  letter-spacing: -0.01em;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  padding: 10px 12px;
+  cursor: pointer;
+}
+.masthead-more__item:hover { background: var(--surface-2); }
+
+/* Jam picker — compact rows instead of full-width primary buttons */
+.jam-list {
+  display: grid;
+  gap: 6px;
+}
+.jam-list__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  box-shadow: 0 3px 0 0 var(--line);
+}
+.jam-list__row:hover { background: var(--surface-2); }
+.jam-list__row:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 0 var(--line);
+}
+.jam-list__row--current {
+  border-color: var(--amber);
+  box-shadow: 0 3px 0 0 var(--amber);
+  background: color-mix(in srgb, var(--amber) 10%, var(--surface));
+}
+.jam-list__name {
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.jam-list__meta {
+  flex: 0 0 auto;
+  color: var(--faint);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.jam-list__row--current .jam-list__meta {
+  color: var(--ink-amber);
+  font-weight: 700;
+}
+
+/* Clear-night: backup landed — confirm wipe in-place */
+.clear-ready {
+  background: var(--surface-2);
+  border: 1px solid var(--ink-danger);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+}
+.clear-ready__msg {
+  margin: 0;
+  font-weight: 600;
+  color: var(--ink-danger);
+  letter-spacing: -0.01em;
+}
+
 /* Host Now: pending song-request jump chip */
 .request-chip {
   display: flex;
@@ -1032,6 +1133,14 @@ select {
 .toast.is-shown .toast__tick {
   animation: toast-tick 2.6s linear forwards;
 }
+.toast--success {
+  background: #f3faf4;
+  color: var(--ink-success);
+  border-color: var(--ink-success);
+  box-shadow: 0 5px 0 0 var(--ink-success);
+}
+.toast--success .toast__tick { background: var(--ink-success); }
+
 .toast--error {
   background: #fff5f3;
   color: var(--ink-danger);

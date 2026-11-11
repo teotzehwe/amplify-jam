@@ -6,7 +6,7 @@ import {
 } from './common.js';
 import { qrSvg } from './qr.js';
 import {
-  adminTourSteps, bindTourHost, startTour, syncTour, tourButton, tourSeen,
+  adminTourSteps, bindTourHost, startTour, syncTour, tourSeen,
 } from './tour.js';
 
 const app = $('#app');
@@ -28,7 +28,22 @@ let jamPicker = null; // { jams: [], nameDraft: '', allowCancel?: boolean } | nu
 let calloutOpen = false;
 /** Settings “Reports & backups” disclosure — kept across live redraws. */
 let settingsOpsOpen = false;
+/** Clear-night: backup just landed — show inline wipe confirm instead of a toast. */
+let clearNightReady = false;
 let refresh = () => {};
+
+/** Relative age for jam picker rows (createdAt ms). */
+function jamAge(createdAt) {
+  const t = Number(createdAt);
+  if (!t) return '';
+  const mins = Math.max(0, Math.round((Date.now() - t) / 60000));
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
 
 /**
  * Host-console guard: toast failures, and bounce to the gate on a revoked
@@ -238,15 +253,24 @@ function jamPickerView() {
             onClick: closeJamPicker,
           }, 'Back to current jam')
         : null,
-      ...(jamPicker.jams.length
-        ? jamPicker.jams.map((j) => {
-            const isCurrent = j.id === currentId;
-            return el('button', {
-              class: isCurrent ? 'btn btn--block btn--primary' : 'btn btn--block',
-              onClick: () => selectJam(j.id),
-            }, isCurrent ? `${j.name || 'Untitled jam'} (current)` : (j.name || 'Untitled jam'));
-          })
-        : [el('p', { class: 'section-note' }, 'No jam sessions yet — create one below.')]),
+      jamPicker.jams.length
+        ? el('div', { class: 'jam-list', role: 'list' },
+            jamPicker.jams.map((j) => {
+              const isCurrent = j.id === currentId;
+              const age = jamAge(j.createdAt);
+              return el('button', {
+                type: 'button',
+                role: 'listitem',
+                class: `jam-list__row${isCurrent ? ' jam-list__row--current' : ''}`,
+                onClick: () => selectJam(j.id),
+              },
+                el('span', { class: 'jam-list__name' }, j.name || 'Untitled jam'),
+                el('span', { class: 'jam-list__meta' },
+                  isCurrent ? 'Current' : (age || 'Session')),
+              );
+            }),
+          )
+        : el('p', { class: 'section-note' }, 'No jam sessions yet — create one below.'),
       el('div', { class: 'field' },
         el('label', { for: 'jam-name' }, 'New jam name'),
         el('input', {
@@ -404,11 +428,6 @@ function console_() {
 
   return el('div', { class: 'stack stack--lg' },
     masthead(state.jam.name, `${pluralize(state.roundIndex, 'song')} played · ${present} here now`,
-      el('button', {
-        class: 'btn btn--ghost btn--sm',
-        onClick: switchJam,
-      }, 'Switch jam'),
-      tourButton(ADMIN_TOUR, adminTourSteps, 'Admin tour'),
       el('a', {
         class: 'btn btn--ghost btn--sm',
         href: tokens.jam ? `/board?jam=${encodeURIComponent(tokens.jam)}` : '/board',
@@ -419,6 +438,31 @@ function console_() {
         class: 'btn btn--ghost btn--sm',
         onClick: () => signOutHost(),
       }, 'Sign out'),
+      el('details', { class: 'masthead-more' },
+        el('summary', { class: 'btn btn--ghost btn--sm' }, 'More'),
+        el('div', { class: 'masthead-more__menu', role: 'menu' },
+          el('button', {
+            type: 'button',
+            role: 'menuitem',
+            class: 'masthead-more__item',
+            onClick: (e) => {
+              e.currentTarget.closest('details')?.removeAttribute('open');
+              switchJam();
+            },
+          }, 'Switch jam'),
+          el('button', {
+            type: 'button',
+            role: 'menuitem',
+            class: 'masthead-more__item',
+            onClick: (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.currentTarget.closest('details')?.removeAttribute('open');
+              startTour(ADMIN_TOUR, adminTourSteps(), { force: true });
+            },
+          }, 'Admin tour'),
+        ),
+      ),
     ),
 
     el('nav', {
@@ -506,6 +550,19 @@ function nowTab() {
   );
 }
 
+/** Copy the player sign-up URL (empty roster CTA on Now). */
+async function copySignupLink() {
+  const signupUrl = tokens.jam
+    ? `${location.origin}/?jam=${encodeURIComponent(tokens.jam)}`
+    : `${location.origin}/`;
+  try {
+    await navigator.clipboard.writeText(signupUrl);
+    toast('Sign-up link copied');
+  } catch {
+    toast('Copy failed — open Settings for the QR', 'error');
+  }
+}
+
 const songById = (id) => state.songs.find((s) => s.id === id) || null;
 const playerById = (id) => state.players.find((p) => p.id === id) || null;
 
@@ -520,9 +577,19 @@ function songChooser() {
   const songs = approvedSongs(state);
 
   if (!state.players.length) {
-    return el('section', { class: 'card' },
+    return el('section', { class: 'card stack' },
       el('div', { class: 'empty' },
-        'Nobody has signed up yet. Share the sign-up link from Settings and the roster will fill in here.'),
+        'Nobody has signed up yet. Share the link so phones can join.'),
+      el('div', { class: 'row row--wrap' },
+        el('button', {
+          class: 'btn btn--primary',
+          onClick: guard(busy(async () => { await copySignupLink(); }, 'host-copy-signup')),
+        }, 'Copy sign-up link'),
+        el('button', {
+          class: 'btn btn--ghost',
+          onClick: () => { tab = 'settings'; draw(); },
+        }, 'Open Settings for QR'),
+      ),
     );
   }
 
@@ -1529,43 +1596,72 @@ function settingsTab() {
           el('div', { class: 'card__head' }, el('h2', {}, 'Start over')),
           el('p', { class: 'section-note' },
             'Clearing the night needs a fresh backup download first — there is no undo.'),
-          el('div', { class: 'row row--wrap' },
-            confirmButton({
-              key: 'reset-turns',
-              label: 'Reset turn counts',
-              class: 'btn btn--danger',
-              confirmClass: 'btn btn--danger',
-              title: 'Reset turn counts? The roster and setlist stay.',
-              onConfirm: guard(async () => {
-                await api('/host/reset', { method: 'POST', body: { mode: 'turns' } });
-                toast('Turns reset');
+          (() => {
+            const backedUpAt = Number(sessionStorage.getItem('amplify.backupAt') || 0);
+            const backupFresh = Boolean(backedUpAt) && Date.now() - backedUpAt <= 15 * 60 * 1000;
+            const ready = clearNightReady || backupFresh;
+            if (ready) {
+              return el('div', { class: 'clear-ready stack' },
+                el('p', { class: 'clear-ready__msg' },
+                  'Backup ready — wipe clears every sign-up and song. There is no undo.'),
+                el('div', { class: 'row row--wrap' },
+                  confirmButton({
+                    key: 'clear-night-wipe',
+                    label: 'Wipe the night',
+                    class: 'btn btn--danger',
+                    confirmClass: 'btn btn--danger',
+                    title: 'Wipe the whole night now?',
+                    onConfirm: guard(async () => {
+                      await api('/host/reset', {
+                        method: 'POST',
+                        body: { mode: 'night', confirmBackup: true },
+                      });
+                      sessionStorage.removeItem('amplify.backupAt');
+                      clearNightReady = false;
+                      toast('Fresh night');
+                    }),
+                    onChange: draw,
+                  }),
+                  el('button', {
+                    class: 'btn btn--ghost',
+                    onClick: () => { clearNightReady = false; draw(); },
+                  }, 'Cancel'),
+                ),
+              );
+            }
+            return el('div', { class: 'row row--wrap' },
+              confirmButton({
+                key: 'reset-turns',
+                label: 'Reset turn counts',
+                class: 'btn btn--danger',
+                confirmClass: 'btn btn--danger',
+                title: 'Reset turn counts? The roster and setlist stay.',
+                onConfirm: guard(async () => {
+                  await api('/host/reset', { method: 'POST', body: { mode: 'turns' } });
+                  toast('Turns reset');
+                }),
+                onChange: draw,
               }),
-              onChange: draw,
-            }),
-            confirmButton({
-              key: 'clear-night',
-              label: 'Clear the night',
-              class: 'btn btn--danger',
-              confirmClass: 'btn btn--danger',
-              title: 'Clear the whole night — every sign-up and song?',
-              onConfirm: guard(async () => {
-                const backedUpAt = Number(sessionStorage.getItem('amplify.backupAt') || 0);
-                if (!backedUpAt || Date.now() - backedUpAt > 15 * 60 * 1000) {
+              confirmButton({
+                key: 'clear-night',
+                label: 'Clear the night',
+                class: 'btn btn--danger',
+                confirmClass: 'btn btn--danger',
+                title: 'Download a backup, then confirm the wipe.',
+                onConfirm: guard(async () => {
                   const dump = await api('/host/export');
                   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
                   const name = (jam.name || 'amplify-night').replace(/[^\w.-]+/g, '-').slice(0, 40);
                   downloadJson(`${name}-${stamp}.json`, dump);
                   sessionStorage.setItem('amplify.backupAt', String(Date.now()));
-                  toast('Backup downloaded — tap Clear again to wipe the night');
-                  return;
-                }
-                await api('/host/reset', { method: 'POST', body: { mode: 'night', confirmBackup: true } });
-                sessionStorage.removeItem('amplify.backupAt');
-                toast('Fresh night');
+                  clearNightReady = true;
+                  toast('Backup downloaded');
+                  draw();
+                }),
+                onChange: draw,
               }),
-              onChange: draw,
-            }),
-          ),
+            );
+          })(),
         ),
       ),
     ),
